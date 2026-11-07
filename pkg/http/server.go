@@ -240,6 +240,14 @@ func (srv *HTTPServer) CreateRequest() pkgmiddleware.Middleware {
 
 	// 创建响应处理函数
 	response := func(reqTime time.Time, ctx *gin.Context) {
+		if appCtx, ok := ctx.Value(pkgtypes.CoreContextNameKey).(Context); ok && appCtx != nil {
+			defer func() {
+				ctx.Set(pkgtypes.CoreContextNameKey, nil)
+
+				// 成功使用上下文后回收
+				recoveryContext(appCtx)
+			}()
+		}
 		srv.handlerResponse(reqTime, ctx)
 	}
 
@@ -270,13 +278,17 @@ func (srv *HTTPServer) handlerResponse(reqTime time.Time, ctx *gin.Context) {
 	// 获取核心上下文 Context
 	appCtx, ok := ctx.Value(pkgtypes.CoreContextNameKey).(Context)
 	if !ok || appCtx == nil {
-		return
+		if _, exists := ctx.Get(pkgtypes.ContextAbortErrorNameKey); !exists {
+			return
+		}
+		// 初始化失败时没有池对象，使用临时包装器读取错误和记录请求日志。
+		appCtx = &context{ctx: ctx}
 	}
 
 	// 获取链路追踪 TraceId
 	traceId = appCtx.TraceID()
 
-	// 发生错误, 进行返回
+	// 发生错误
 	if ctx.IsAborted() {
 		if err := appCtx.GetAbortError(); err != nil {
 			httpCode = err.HTTPCode()
@@ -298,14 +310,29 @@ func (srv *HTTPServer) handlerResponse(reqTime time.Time, ctx *gin.Context) {
 			stackErr = ctx.Err()
 			resp = NewErrorResponse(traceId, businessCode, businessMessage, err.Desc())
 		}
-
-		ctx.JSON(httpCode, resp)
 	} else {
 		// 响应正确返回
 		httpCode = nethttp.StatusOK
 		businessMessage = "OK"
 		resp = NewSuccessResponse(traceId, appCtx.GetPayload())
+	}
+
+	if !ctx.Writer.Written() {
+		if httpCode == 0 {
+			httpCode = nethttp.StatusInternalServerError
+		}
+
 		ctx.JSON(httpCode, resp)
+
+		// `ctx.JSON` 在序列化失败时不会 panic，而是把错误 append 到`ctx.Errors` 后静默返回，且正文没写出去 （`Writer.Written()` 仍为`false` ）
+		if !ctx.Writer.Written() && len(ctx.Errors) > 0 {
+			businessErr := errcode.New(errcode.ServerError).WithStackError(ctx.Errors.Last().Err)
+			appCtx.WithAbortError(businessErr)
+			businessCode = businessErr.BusinessCode()
+			businessMessage = businessErr.Message()
+			stackErr = businessErr.StackError()
+			ctx.JSON(nethttp.StatusInternalServerError, NewErrorResponse(traceId, businessCode, businessMessage, businessErr.Desc()))
+		}
 	}
 
 	costSeconds := time.Since(reqTime).Seconds()

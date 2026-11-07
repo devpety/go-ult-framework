@@ -750,9 +750,33 @@ return nil, errcode.ErrDataSelectError.WithDesc(err.Error())
 | `ctx.WithAbortError(err)` | 设置 BusinessError 并中断请求 | 业务处理失败 |
 
 > ⚠️ **注意事项**
-> - `WithAbortError` 接受 `errcode.BusinessError` 参数，会自动设置 HTTP 状态码并 `AbortWithStatus`
+> - `WithAbortError` 接受 `errcode.BusinessError` 参数，保存错误、设置 HTTP 状态码并 `Abort`，响应头和 JSON 正文在请求收尾时统一提交
 > - `WithAbortError` 后必须 `return`，否则会继续执行
 > - `WithPayload` 一般放在最后，否则需 `return`
+
+### 请求收尾与 Context 生命周期
+
+- 默认请求链由 Request 登记响应回调，Recovery 在下游全部返回或捕获 panic 后执行收尾；每个请求的响应回调最多执行一次。
+- 尚未提交响应时发生 panic，返回 HTTP 500 和统一错误 JSON；业务已经写出正文、Flush 或提交响应头时，保留已有响应，记录异常，不再追加 JSON。已经发送的状态码无法撤回。
+- 直接使用 Gin 输出 JSON、文件、重定向或空正文状态码时，框架保留已提交的响应，仍执行请求日志及 Context 清理。
+- 默认 HTTP Context 在响应和日志处理结束后清除引用、重置并归还对象池；初始化失败也会归还已取得的对象。不要在请求结束后持有 HTTP Context 或交给后台 goroutine 使用。
+- 对象回收不会清空已经通过 `RequestContext()` 传给下游的 TraceID 数据，也不会改变原有上下文取消语义。
+
+自行替换内置 Recovery 时，需要接入收尾协议，确保正常和异常路径都执行响应回调：
+
+```go
+middleware.ManageRequestCompletion(ctx)
+defer middleware.CompleteRequest(ctx)
+defer func() {
+    if recovered := recover(); recovered != nil {
+        // 在这里设置业务错误、HTTP 状态码并 Abort，不提前提交响应头。
+        // 此 defer 后声明，因此先于 CompleteRequest 执行。
+    }
+}()
+ctx.Next()
+```
+
+`NewDefaultRequest` 和 `RequestConfig.Response` 的签名保留。单独使用 Request 的正常路径仍会执行响应回调；自定义异常恢复需要按上面的协议移交收尾，避免在异常转换前输出成功响应。
 
 ---
 
@@ -1129,7 +1153,7 @@ Request 中间件功能：
 1. **404 拦截**: 检查 `ctx.Writer.Status() == 404`，跳过不匹配的路由
 2. **Context 初始化**: 通过 `ContextInitializer` 创建 Context（使用对象池复用）
 3. **验证器设置**: 将 Validator 存入 gin.Context，供 `ctx.Validator()` 使用
-4. **响应处理**: 通过 defer 调用 Response 函数处理成功/错误响应
+4. **响应处理**: 登记 Response 回调，由外层 Recovery 在异常处理后统一执行；单独使用时保留正常路径的延迟回调
 5. **依赖 Recovery**: 确保 Recovery 能捕获 Request 中的 panic
 
 服务器自动创建 Request 中间件（`srv.CreateRequest()`），无需手动注册。

@@ -145,8 +145,7 @@ func (c *context) reset() {
 func (c *context) init() error {
 	body, err := c.ctx.GetRawData()
 	if err != nil {
-		c.ctx.AbortWithStatus(http.StatusInternalServerError)
-		c.ctx.Set(pkgtypes.ContextAbortErrorNameKey, errcode.New(errcode.ServerError).WithDesc(err.Error()))
+		c.WithAbortError(errcode.New(errcode.ServerError).WithDesc(err.Error()))
 		return err
 	}
 
@@ -276,8 +275,9 @@ func (c *context) WithAbortError(err errcode.BusinessError) {
 			httpCode = http.StatusInternalServerError
 		}
 
-		c.ctx.AbortWithStatus(httpCode)
 		c.ctx.Set(pkgtypes.ContextAbortErrorNameKey, err)
+		c.ctx.Status(httpCode)
+		c.ctx.Abort()
 	}
 }
 
@@ -308,7 +308,6 @@ func (c *context) GetPayload() interface{} {
 	}
 	return nil
 }
-
 
 // Header 返回所有请求头的只读引用。
 // 注意：返回的是原始请求头的引用，不应修改。
@@ -439,11 +438,19 @@ var contextPool = &sync.Pool{
 func newContext(ctx *gin.Context) (Context, error) {
 	context := contextPool.Get().(*context)
 	context.ctx = ctx
+	initialized := false
+	defer func() {
+		if !initialized {
+			// 初始化失败立即回收
+			recoveryContext(context)
+		}
+	}()
 	if err := context.init(); err != nil {
 		// init() 方法已经设置了错误并中止了请求
 		// 这里返回 nil 和错误，调用者应该处理这个错误
 		return nil, err
 	}
+	initialized = true
 	return context, nil
 }
 

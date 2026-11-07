@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"ult/errcode"
 	"ult/pkg/types"
 	pkgtypes "ult/pkg/types"
 
@@ -98,26 +99,37 @@ func (r *Request) handler() HandlerFunc {
 			return
 		}
 
-		// 请求时间
+		// 在初始化前登记收尾，初始化失败也走统一错误响应。
 		ts := time.Now()
+		ctx.Set(requestCompletionKey, &requestCompletion{response: func() {
+			if r.config.Response != nil {
+				r.config.Response(ts, ctx)
+			}
+		}})
+		if managed, _ := ctx.Get(requestCompletionOwnerKey); managed != true {
+			// 兼容单独使用 Request 的正常路径；panic 留给外层恢复后收尾。
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					panic(recovered)
+				}
+				CompleteRequest(ctx)
+			}()
+		}
 
 		// 初始化 Context（通过配置的初始化函数）
 		if r.config.ContextInitializer != nil {
 			appCtx, err := r.config.ContextInitializer(ctx)
 			if err != nil {
-				ctx.AbortWithStatus(http.StatusInternalServerError)
+				if _, exists := ctx.Get(pkgtypes.ContextAbortErrorNameKey); !exists {
+					ctx.Set(pkgtypes.ContextAbortErrorNameKey, errcode.New(errcode.ServerError).WithStackError(err))
+				}
+				ctx.Status(http.StatusInternalServerError)
+				ctx.Abort()
 				return
 			}
 
 			// 存储 Context 到 gin.Context（appCtx 是 interface{} 类型）
 			ctx.Set(pkgtypes.CoreContextNameKey, appCtx)
-		}
-
-		// 响应处理（通过配置的响应处理函数）
-		if r.config.Response != nil {
-			defer func() {
-				r.config.Response(ts, ctx)
-			}()
 		}
 
 		ctx.Next()
