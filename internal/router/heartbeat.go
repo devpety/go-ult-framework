@@ -11,4 +11,5 @@ import (
 //   - group: 路由组
 func (r *httpRouter) heartbeat(group http.RouterGroup) {
 	group.GET("/state", r.handle.Heartbeat.State)
+	group.GET("/ready", r.handle.Heartbeat.Ready)
 }

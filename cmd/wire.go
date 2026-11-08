@@ -6,6 +6,7 @@
 package main
 
 import (
+	"context"
 	"ult/config"
 	"ult/internal/api"
 	"ult/internal/app"
@@ -19,7 +20,7 @@ import (
 	"github.com/google/wire"
 )
 
-func initApp(conf *config.Config, tools *app.Tools) (*pkgapp.App, func(), error) {
+func initApp(ctx context.Context, conf *config.Config, tools *app.Tools) (*pkgapp.App, func(), error) {
 	panic(wire.Build(
 		data.ProviderSet,
 		repo.ProviderSet,
@@ -29,4 +30,3 @@ func initApp(conf *config.Config, tools *app.Tools) (*pkgapp.App, func(), error)
 		server.ProviderSet,
 		newApp))
 }
-

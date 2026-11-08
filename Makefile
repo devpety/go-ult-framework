@@ -1,7 +1,7 @@
 GOHOSTOS:=$(shell go env GOHOSTOS)
-GOPATH:=$(shell go env GOPATH)
 GOVERSION:=$(shell go env GOVERSION)
 GIT_VERSION=$(shell git describe --tags --always)
+CONFIG ?= .env.yml
 
 ifneq ($(wildcard .env.yml), .env.yml)
 	ENVFILE=$(shell cp .env.example.yml .env.yml)
@@ -18,24 +18,25 @@ init:
 .PHONY: generate
 # 自动化生成编译前的类库代码
 generate:
-	go mod download && go mod tidy
-	go get github.com/google/wire/cmd/wire@latest
-	go generate ./...
+	go generate -mod=readonly ./...
 
 .PHONY: wire
 # 生成依赖注入文件
 wire:
-	cd ./cmd && $(GOPATH)/bin/wire
+	cd ./cmd && GOFLAGS="$(GOFLAGS) -mod=readonly" go run github.com/google/wire/cmd/wire
+	# Wire 固定生成 -mod=mod 指令，转回统一入口，避免后续生成更新依赖。
+	sed 's|^//go:generate go run -mod=mod github.com/google/wire/cmd/wire$$|//go:generate make -C .. wire|' cmd/wire_gen.go > cmd/wire_gen.go.tmp
+	mv cmd/wire_gen.go.tmp cmd/wire_gen.go
 
 .PHONY: gormgen
 # 生成数据库查询器文件
 gormgen:
-	cd generate/gormgen && go run main.go
+	go run ./generate/gormgen -config "$(CONFIG)"
 
 .PHONY: run
 # 开发环境启动项目
 run:
-	cd cmd && go run ./...
+	go run ./cmd -config "$(CONFIG)"
 
 .PHONY: build
 # 编译构建项目 (需要有 .git 提交版本)

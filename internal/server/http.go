@@ -3,16 +3,22 @@
 package server
 
 import (
+	"context"
 	"fmt"
-	"strings"
+	"math"
+	"net"
+	"strconv"
+	"time"
 
 	"ult/config"
+	"ult/config/autoload"
 	"ult/internal/app"
 	"ult/internal/router"
 	pkghttp "ult/pkg/http"
 	pkgmiddleware "ult/pkg/http/middleware"
+	"ult/pkg/notify/recover/email"
 
-	"github.com/raylin666/go-utils/v2/http"
+	"github.com/devpety/go-utils/v3/http"
 )
 
 // NewHTTPServer 创建并配置 HTTP 服务器实例。
@@ -25,47 +31,76 @@ import (
 //
 // 返回:
 //   - *pkghttp.HTTPServer: HTTP 服务器实例
+//   - error: 配置或请求限制无效
 func NewHTTPServer(
 	config *config.Config,
 	tool *app.Tools,
-	httpRouter router.HTTPRouter) *pkghttp.HTTPServer {
-	var addr = fmt.Sprintf("%s:%d", config.Server.Http.Host, config.Server.Http.Port)
-	var corsDomains []string
-	if config.Server.Http.Cors.Domains == "all" {
-		corsDomains = append(corsDomains, "*")
-	} else {
-		corsDomains = strings.Split(config.Server.Http.Cors.Domains, ",")
+	httpRouter router.HTTPRouter) (*pkghttp.HTTPServer, error) {
+	if config == nil {
+		return nil, fmt.Errorf("HTTP 配置不能为空")
+	}
+	options, err := httpLimitOptions(config.Server.Http)
+	if err != nil {
+		return nil, err
+	}
+	var addr = net.JoinHostPort(config.Server.Http.Host, strconv.Itoa(config.Server.Http.Port))
+	// 创建 CORS 中间件
+	corsConfig := config.Server.Http.Cors
+	corsMiddleware, err := pkgmiddleware.NewCORS(&pkgmiddleware.CORSConfig{
+		Enabled:          corsConfig.Enabled,
+		AllowedOrigins:   corsConfig.AllowedOrigins,
+		AllowedMethods:   corsConfig.AllowedMethods,
+		AllowedHeaders:   corsConfig.AllowedHeaders,
+		AllowCredentials: corsConfig.AllowCredentials,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if config.Notify.Recover.Email.Host != "" {
+		options = append(options, pkghttp.WithAlertNotify(email.NotifyHandler(context.Background(), config.Notify, tool.Logger())))
 	}
 
-	// 创建 CORS 中间件
-	corsMiddleware := pkgmiddleware.NewCORS(&pkgmiddleware.CORSConfig{
-		Enabled:            len(corsDomains) > 0,
-		AllowedOrigins:     corsDomains,
-		AllowCredentials:   true,
-		OptionsPassthrough: true,
-	})
-
-	// 创建 Recovery 中间件（默认启用）
-	recoveryMiddleware := pkgmiddleware.NewDefaultRecovery(config, tool.Logger(), nil)
-
-	// 创建服务器
-	var server = pkghttp.NewServer(
+	options = append(options,
+		pkghttp.WithMiddleware(corsMiddleware),
+		pkghttp.WithRoutes(httpRouter),
+		pkghttp.WithPProf(config.Environment),
+	)
+	
+	return pkghttp.NewServer(
 		config,
 		tool.Logger(),
 		[]http.ServerOption{
 			http.WithServerNetwork(config.Server.Http.Network),
 			http.WithServerAddress(addr),
 		},
-		pkghttp.WithMiddleware(
-			recoveryMiddleware,
-			corsMiddleware),
+		options...,
 	)
+}
 
-	// 注册路由
-	httpRouter(server)
-
-	// 注册 PProf 性能分析路由（非生产环境自动启用）
-	pkghttp.RegisterPProf(server.Engine(), config.Environment)
-
-	return server
+func httpLimitOptions(config autoload.Http) ([]pkghttp.Option, error) {
+	if config.MaxBodyBytes < 0 {
+		return nil, fmt.Errorf("max_body_bytes 不能为负数")
+	}
+	var options []pkghttp.Option
+	if config.MaxBodyBytes > 0 {
+		options = append(options, pkghttp.WithMaxBodyBytes(config.MaxBodyBytes))
+	}
+	for _, limit := range []struct {
+		name   string
+		value  int64
+		option func(time.Duration) pkghttp.Option
+	}{
+		{"read_header_timeout_ms", config.ReadHeaderTimeoutMS, pkghttp.WithReadHeaderTimeout},
+		{"read_timeout_ms", config.ReadTimeoutMS, pkghttp.WithReadTimeout},
+		{"write_timeout_ms", config.WriteTimeoutMS, pkghttp.WithWriteTimeout},
+		{"idle_timeout_ms", config.IdleTimeoutMS, pkghttp.WithIdleTimeout},
+	} {
+		if limit.value < 0 || limit.value > math.MaxInt64/int64(time.Millisecond) {
+			return nil, fmt.Errorf("%s 超出允许范围", limit.name)
+		}
+		if limit.value > 0 {
+			options = append(options, limit.option(time.Duration(limit.value)*time.Millisecond))
+		}
+	}
+	return options, nil
 }

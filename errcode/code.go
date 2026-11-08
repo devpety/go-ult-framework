@@ -11,19 +11,22 @@ const (
 // 100xxx: 服务端错误
 // 200xxx: 客户端错误
 const (
-	ServerError           = 100001 // 内部服务器错误
+	ServerError             = 100001 // 内部服务器错误
+	ServiceUnavailableError = 100002 // 服务暂不可用
 
-	AuthorizationError    = 200001 // 签名信息错误
-	ParamBindError        = 200002 // 参数信息错误
-	RequestError          = 200003 // 请求错误
-	ParamValidateError    = 200004 // 参数校验错误
-	UnknownError          = 200005 // 未知错误
-	DataNotExistError     = 200006 // 数据不存在
-	DataExistError        = 200007 // 数据已存在
-	RequestNotFoundError  = 200008 // 不存在的请求
-	DataDeleteError       = 200009 // 数据删除错误
-	ResourceNotExistError = 200010 // 资源不存在
-	DataSelectError       = 200011 // 数据查询失败
-	DataCreateError       = 200012 // 数据创建失败
-	DataUpdateError       = 200013 // 数据更新失败
+	AuthorizationError       = 200001 // 签名信息错误
+	ParamBindError           = 200002 // 参数信息错误
+	RequestError             = 200003 // 请求错误
+	ParamValidateError       = 200004 // 参数校验错误
+	UnknownError             = 200005 // 未知错误
+	DataNotExistError        = 200006 // 数据不存在
+	DataExistError           = 200007 // 数据已存在
+	RequestNotFoundError     = 200008 // 不存在的请求
+	DataDeleteError          = 200009 // 数据删除错误
+	ResourceNotExistError    = 200010 // 资源不存在
+	DataSelectError          = 200011 // 数据查询失败
+	DataCreateError          = 200012 // 数据创建失败
+	DataUpdateError          = 200013 // 数据更新失败
+	RequestBodyTooLargeError = 200014 // 请求体超过限制
+	RequestTimeoutError      = 200015 // 请求读取超时
 )

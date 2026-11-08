@@ -2,6 +2,7 @@
 package repositories
 
 import (
+	"maps"
 	"ult/pkg/cache"
 )
 
@@ -58,10 +59,10 @@ func (repo *redisRepo) Redis(name string) cache.Redis {
 	return repo.resource[name]
 }
 
-// All 获取所有 Redis 连接。
+// All 返回连接映射的副本；连接实例仍由仓库统一管理。
 //
 // 返回:
 //   - map[string]cache.Redis: Redis 连接映射
 func (repo *redisRepo) All() map[string]cache.Redis {
-	return repo.resource
+	return maps.Clone(repo.resource)
 }

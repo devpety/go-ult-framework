@@ -1,4 +1,4 @@
-FROM raylin666/golang:1.17-wire AS builder
+FROM raylin666/golang:1.23-wire AS builder
 
 COPY . /go
 WORKDIR /go

@@ -2,7 +2,10 @@
 // 管理数据库和 Redis 连接资源，支持多连接实例管理。
 package repositories
 
-import "ult/pkg/db"
+import (
+	"maps"
+	"ult/pkg/db"
+)
 
 const (
 	DbConnectionDefaultName = "default" // 默认数据库连接名称
@@ -57,10 +60,10 @@ func (repo *dbRepo) DB(name string) db.Db {
 	return repo.resource[name]
 }
 
-// All 获取所有数据库连接。
+// All 返回连接映射的副本；连接实例仍由仓库统一管理。
 //
 // 返回:
 //   - map[string]db.Db: 数据库连接映射
 func (repo *dbRepo) All() map[string]db.Db {
-	return repo.resource
+	return maps.Clone(repo.resource)
 }

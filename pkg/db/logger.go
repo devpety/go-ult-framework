@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"time"
 	"ult/pkg/logger"
-	"ult/pkg/types"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -99,8 +98,11 @@ func NewLogger(logger *logger.Logger, opts ...LoggerOption) *Logger {
 // 返回:
 //   - gorm_logger.Interface: 日志接口实例
 func (l *Logger) LogMode(level gorm_logger.LogLevel) gorm_logger.Interface {
-	l.logLevel = level
-	return l
+	cloned := *l
+	options := *l.loggerOption
+	options.logLevel = level
+	cloned.loggerOption = &options
+	return &cloned
 }
 
 // Info 记录 Info 级别日志。
@@ -153,32 +155,24 @@ func (l *Logger) Trace(ctx context.Context, begin time.Time, fc func() (string, 
 	}
 
 	var (
-		traceId string
-		sql     string
-		rows    int64
+		sql  string
+		rows int64
 	)
-
-	// 请求链路追踪 TraceID
-	reqCtx, ok := types.FromRequestContext(ctx)
-	if ok {
-		traceId = reqCtx.TraceID()
-	}
 
 	elapsed := time.Since(begin)
 	elapsedStr := zap.String("elapsed", fmt.Sprintf("%.3fms", float64(elapsed.Nanoseconds())/1e6))
 	fileStr := zap.String("file", utils.FileWithLineNum())
 	rowsStr := func(rows int64) zap.Field { return zap.Int64("rows", rows) }
 	sqlStr := func(sql string) zap.Field { return zap.String("sql", sql) }
-	traceIdStr := func(traceId string) zap.Field { return zap.String("trace_id", traceId) }
 	switch {
 	case err != nil && l.logLevel >= gorm_logger.Error && (!l.ignoreRecordNotFoundError || !errors.Is(err, gorm.ErrRecordNotFound)):
 		sql, rows = fc()
-		l.l.UseSQL(ctx).Error("ERROR SQL", zap.Error(err), fileStr, elapsedStr, rowsStr(rows), sqlStr(sql), traceIdStr(traceId))
+		l.l.UseSQL(ctx).Error("ERROR SQL", zap.Error(err), fileStr, elapsedStr, rowsStr(rows), sqlStr(sql))
 	case l.slowThreshold != 0 && elapsed > l.slowThreshold && l.logLevel >= gorm_logger.Warn:
 		sql, rows = fc()
-		l.l.UseSQL(ctx).Warn(fmt.Sprintf("SLOW SQL >= %v", l.slowThreshold), fileStr, elapsedStr, rowsStr(rows), sqlStr(sql), traceIdStr(traceId))
+		l.l.UseSQL(ctx).Warn(fmt.Sprintf("SLOW SQL >= %v", l.slowThreshold), fileStr, elapsedStr, rowsStr(rows), sqlStr(sql))
 	case l.logLevel >= gorm_logger.Info:
 		sql, rows = fc()
-		l.l.UseSQL(ctx).Info("INFO SQL", fileStr, elapsedStr, rowsStr(rows), sqlStr(sql), traceIdStr(traceId))
+		l.l.UseSQL(ctx).Info("INFO SQL", fileStr, elapsedStr, rowsStr(rows), sqlStr(sql))
 	}
 }

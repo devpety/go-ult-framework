@@ -7,7 +7,7 @@ import (
 	"time"
 	"ult/pkg/types"
 
-	"github.com/raylin666/go-utils/v2/logger"
+	"github.com/devpety/go-utils/v3/logger"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -34,7 +34,11 @@ type Logger struct {
 //   - error: 创建错误
 func NewJSONLogger(opts ...logger.Option) (*Logger, error) {
 	zapLogger, err := logger.NewJSONLogger(opts...)
-	return &Logger{zapLogger.Logger}, err
+	if err != nil {
+		return nil, err
+	}
+	
+	return &Logger{zapLogger.Logger}, nil
 }
 
 // UseApp 获取应用日志记录器，带有 TraceID。
@@ -45,7 +49,7 @@ func NewJSONLogger(opts ...logger.Option) (*Logger, error) {
 // 返回:
 //   - *zap.Logger: 应用日志记录器
 func (log *Logger) UseApp(ctx context.Context) *zap.Logger {
-	return log.Logger.Named(LogApp).With(zap.Any("trace_id", ctx.Value(types.TraceIdName)))
+	return log.Logger.Named(LogApp).With(traceIDField(ctx))
 }
 
 // UseSQL 获取 SQL 日志记录器，带有 TraceID。
@@ -56,7 +60,7 @@ func (log *Logger) UseApp(ctx context.Context) *zap.Logger {
 // 返回:
 //   - *zap.Logger: SQL 日志记录器
 func (log *Logger) UseSQL(ctx context.Context) *zap.Logger {
-	return log.Logger.Named(LogSQL).With(zap.Any("trace_id", ctx.Value(types.TraceIdName)))
+	return log.Logger.Named(LogSQL).With(traceIDField(ctx))
 }
 
 // UseRequest 获取请求日志记录器，带有 TraceID。
@@ -67,7 +71,14 @@ func (log *Logger) UseSQL(ctx context.Context) *zap.Logger {
 // 返回:
 //   - *zap.Logger: 请求日志记录器
 func (log *Logger) UseRequest(ctx context.Context) *zap.Logger {
-	return log.Logger.Named(LogRequest).With(zap.Any("trace_id", ctx.Value(types.TraceIdName)))
+	return log.Logger.Named(LogRequest).With(traceIDField(ctx))
+}
+
+func traceIDField(ctx context.Context) zap.Field {
+	if traceID := types.TraceIDFromContext(ctx); traceID != "" {
+		return zap.String("trace_id", traceID)
+	}
+	return zap.Any("trace_id", nil)
 }
 
 // RequestLogFormat 请求日志格式结构体。

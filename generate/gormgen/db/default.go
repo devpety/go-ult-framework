@@ -23,10 +23,9 @@ func NewGeneratorDefaultDb(dbInterface db.Db, outPath string) {
 	g.ApplyBasic(
 		testModel,
 	)
-	
+
 	// apply diy interfaces on structs or table models
 	// g.ApplyInterface()
-
 
 	g.Execute()
 }

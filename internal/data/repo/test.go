@@ -8,8 +8,6 @@ import (
 	"ult/internal/data"
 	"ult/internal/data/dbquery"
 	"ult/internal/data/model"
-
-	"gorm.io/gorm"
 )
 
 // TestRepo 接口验证。
@@ -41,14 +39,9 @@ func NewTestRepo(data data.Data) TestRepo {
 	return &testRepo{data: data}
 }
 
-// db 获取带上下文的 GORM DB 实例。
-func (t *testRepo) db(ctx context.Context) *gorm.DB {
-	return t.data.WithContext(ctx).GormDB()
-}
-
-// query 获取带上下文的测试模型查询器。
-func (t *testRepo) query(ctx context.Context) dbquery.ITestDo {
-	return dbquery.Use(t.db(ctx)).Test.WithContext(ctx)
+// query 获取当前数据实例的查询器，字段和执行器均从该实例读取。
+func (t *testRepo) query(ctx context.Context) *dbquery.Query {
+	return t.data.WithContext(ctx).DB()
 }
 
 // GetByID 根据 ID 获取测试数据。
@@ -61,7 +54,8 @@ func (t *testRepo) query(ctx context.Context) dbquery.ITestDo {
 //   - *model.Test: 测试数据
 //   - error: 查询错误
 func (t *testRepo) GetByID(ctx context.Context, id int) (*model.Test, error) {
-	return t.query(ctx).Where(dbquery.Test.ID.Eq(id)).First()
+	query := t.query(ctx)
+	return query.Test.WithContext(ctx).Where(query.Test.ID.Eq(id)).First()
 }
 
 // List 获取所有测试数据列表。
@@ -73,7 +67,8 @@ func (t *testRepo) GetByID(ctx context.Context, id int) (*model.Test, error) {
 //   - []*model.Test: 测试数据列表
 //   - error: 查询错误
 func (t *testRepo) List(ctx context.Context) ([]*model.Test, error) {
-	return t.query(ctx).Find()
+	query := t.query(ctx)
+	return query.Test.WithContext(ctx).Find()
 }
 
 // Create 创建新的测试数据。
@@ -85,7 +80,8 @@ func (t *testRepo) List(ctx context.Context) ([]*model.Test, error) {
 // 返回:
 //   - error: 创建错误
 func (t *testRepo) Create(ctx context.Context, test *model.Test) error {
-	return t.query(ctx).Create(test)
+	query := t.query(ctx)
+	return query.Test.WithContext(ctx).Create(test)
 }
 
 // Update 更新测试数据。
@@ -97,7 +93,8 @@ func (t *testRepo) Create(ctx context.Context, test *model.Test) error {
 // 返回:
 //   - error: 更新错误
 func (t *testRepo) Update(ctx context.Context, test *model.Test) error {
-	return t.query(ctx).Save(test)
+	query := t.query(ctx)
+	return query.Test.WithContext(ctx).Save(test)
 }
 
 // Delete 根据 ID 删除测试数据。
@@ -109,6 +106,7 @@ func (t *testRepo) Update(ctx context.Context, test *model.Test) error {
 // 返回:
 //   - error: 删除错误
 func (t *testRepo) Delete(ctx context.Context, id int) error {
-	_, err := t.query(ctx).Where(dbquery.Test.ID.Eq(id)).Delete()
+	query := t.query(ctx)
+	_, err := query.Test.WithContext(ctx).Where(query.Test.ID.Eq(id)).Delete()
 	return err
 }

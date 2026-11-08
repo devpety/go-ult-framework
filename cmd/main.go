@@ -2,7 +2,12 @@ package main
 
 import (
 	"context"
+	"errors"
+	"flag"
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 	"ult/config"
 	"ult/errcode"
 	"ult/internal/app"
@@ -10,28 +15,35 @@ import (
 	"ult/pkg/http"
 	"ult/pkg/logger"
 
-	"github.com/raylin666/go-utils/v2/auth"
-	utils_logger "github.com/raylin666/go-utils/v2/logger"
-	"github.com/raylin666/go-utils/v2/server/system"
+	utils_logger "github.com/devpety/go-utils/v3/logger"
+	"github.com/devpety/go-utils/v3/server/system"
 )
 
 func newApp(
+	ctx context.Context,
 	config *config.Config,
 	tools *app.Tools,
 	hs *http.HTTPServer) *pkgapp.App {
-	ctx := context.Background()
-	appCtx, appCancel := context.WithCancel(ctx)
 	return pkgapp.NewApp(
 		config,
 		tools.Logger(),
-		pkgapp.WithAppContext(appCtx),
-		pkgapp.WithAppServer(hs),
-		pkgapp.WithAppCancel(appCancel))
+		pkgapp.WithAppContext(ctx),
+		pkgapp.WithAppServer(hs))
 }
 
 func main() {
+	configFile := flag.String("config", ".env.yml", "配置文件路径")
+	flag.Parse()
+
+	ctx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT)
+	defer stopSignals()
+	
+	// 首个信号触发取消后注销入口监听，保留再次发送信号强制退出的行为。
+	stopRestore := context.AfterFunc(ctx, stopSignals)
+	defer stopRestore()
+
 	// 初始化配置
-	conf, err := config.New()
+	conf, err := config.New(*configFile)
 	if err != nil {
 		panic(fmt.Sprintf("配置初始化失败：%v", err))
 	}
@@ -69,7 +81,7 @@ func main() {
 	}
 
 	// 初始化 JWT 鉴权认证
-	jwt, err := auth.NewJWT(conf.JWT.App, conf.JWT.Key, conf.JWT.Secret)
+	jwt, err := app.NewJWT(conf)
 	if err != nil {
 		appLogger.UseApp(context.Background()).Error(fmt.Sprintf("JWT 初始化失败：%v", err))
 		panic(err)
@@ -79,8 +91,12 @@ func main() {
 	var tools = app.NewTools(appLogger, datetime, environment, jwt)
 
 	// 初始化应用服务
-	application, cleanup, err := initApp(conf, tools)
+	application, cleanup, err := initApp(ctx, conf, tools)
 	if err != nil {
+		if errors.Is(err, context.Canceled) && ctx.Err() != nil {
+			appLogger.UseApp(ctx).Info("依赖初始化已取消")
+			return
+		}
 		appLogger.UseApp(context.Background()).Error(fmt.Sprintf("应用初始化失败：%v", err))
 		panic(err)
 	}

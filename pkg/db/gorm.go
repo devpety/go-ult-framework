@@ -5,12 +5,14 @@ package db
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 	"ult/config/autoload"
 	"ult/pkg/logger"
+	"ult/pkg/startup"
 
-	"github.com/raylin666/go-utils/v2/db/gorm"
-	gorm_db "gorm.io/gorm"
+	"github.com/devpety/go-utils/v3/db/gorm"
+	"go.uber.org/zap"
 	gorm_logger "gorm.io/gorm/logger"
 )
 
@@ -21,9 +23,10 @@ type Predicate string
 
 // Db 数据库接口，定义数据库连接的基本操作。
 type Db interface {
-	Get() gorm.Client // 获取 GORM 客户端
-	Close() error     // 关闭数据库连接
-	Ping() error      // 测试数据库连接
+	Get() gorm.Client                      // 获取 GORM 客户端
+	Close() error                          // 关闭数据库连接
+	Ping() error                           // 测试数据库连接
+	PingContext(ctx context.Context) error // 使用调用方期限测试数据库连接
 }
 
 // db 数据库实例，封装 GORM 客户端和日志记录器。
@@ -37,39 +40,26 @@ type db struct {
 // 返回:
 //   - error: 连接测试错误，nil 表示连接正常
 func (db *db) Ping() error {
-	return db.Get().SqlDB().Ping()
+	return db.PingContext(context.Background())
 }
 
-// NewDb 创建新的数据库连接实例。
-// 支持连接重试机制，可配置最大重试次数和重试间隔。
-//
-// 参数:
-//   - name: 数据库连接名称，用于日志标识
-//   - config: 数据库配置（DSN、驱动、连接池等）
-//   - logger: 日志记录器实例
-//
-// 返回:
-//   - Db: 数据库实例
-//   - error: 连接创建错误
-func NewDb(name string, config autoload.DB, logger *logger.Logger) (Db, error) {
-	var rdb = new(db)
-	rdb.logger = logger
+// PingContext 使用请求上下文执行连接探测。
+func (db *db) PingContext(ctx context.Context) error { return db.Get().SqlDB().PingContext(ctx) }
 
-	maxRetries := config.MaxRetries
-	if maxRetries <= 0 {
-		maxRetries = 3
+// NewDb 在调用方总期限内重试，单次连接的取消与资源清理由 go-utils 负责。
+func NewDb(ctx context.Context, name string, config autoload.DB, log *logger.Logger) (Db, error) {
+	policy, err := startup.NewPolicy(config.MaxRetries, config.RetryDelay, config.ConnectTimeoutMS)
+	if err != nil {
+		return nil, fmt.Errorf("数据库连接 %s 初始化策略无效: %w", name, err)
 	}
-
-	retryDelay := config.RetryDelay
-	if retryDelay <= 0 {
-		retryDelay = 1
+	
+	maxLifetime, err := connectionMaxLifetime(config.MaxLifeTime)
+	if err != nil {
+		return nil, fmt.Errorf("数据库连接 %s 配置无效: %w", name, err)
 	}
-
-	var client gorm.Client
-	var err error
-
-	for i := 0; i < maxRetries; i++ {
-		client, err = gorm.NewClient(
+	resource := &db{logger: log}
+	client, err := startup.Connect(ctx, policy, func(attemptCtx context.Context) (gorm.Client, error) {
+		client, err := gorm.NewClient(attemptCtx,
 			gorm.WithDsn(config.Dsn),
 			gorm.WithDriver(config.Driver),
 			gorm.WithDbName(config.DbName),
@@ -81,32 +71,30 @@ func NewDb(name string, config autoload.DB, logger *logger.Logger) (Db, error) {
 			gorm.WithPrefix(config.Prefix),
 			gorm.WithMaxIdleConn(config.MaxIdleConn),
 			gorm.WithMaxOpenConn(config.MaxOpenConn),
-			gorm.WithMaxLifeTime(time.Duration(config.MaxLifeTime)),
+			gorm.WithMaxLifeTime(maxLifetime),
 			gorm.WithParseTime(config.ParseTime),
-			gorm.WithLoc(config.Loc))
-		if err == nil {
-			break
+			gorm.WithLoc(config.Loc),
+			gorm.WithLogger(resource.WithLogger()))
+		if err != nil {
+			return nil, err
 		}
-
-		logger.UseApp(context.TODO()).Warn(fmt.Sprintf("数据库连接 %s 尝试 %d/%d 失败：%v，在 %d 秒内重试", name, i+1, maxRetries, err, retryDelay))
-		time.Sleep(time.Duration(retryDelay) * time.Second)
-	}
-
+		return client, nil
+	}, func(attempt int, err error) {
+		log.UseApp(ctx).Warn(fmt.Sprintf("数据库连接 %s 第 %d 次初始化失败，等待重试", name, attempt), zap.Error(err))
+	})
 	if err != nil {
-		return nil, fmt.Errorf("创建数据库连接失败：%v，%d次重试后仍失败", err, maxRetries)
+		return nil, fmt.Errorf("初始化数据库连接 %s 失败: %w", name, err)
 	}
+	resource.client = client
+	return resource, nil
+}
 
-	rdb.client = client
-
-	// 日志处理
-	l := rdb.WithLogger()
-	if l != nil {
-		rdb.client.WithLogger(l)
+// connectionMaxLifetime 将配置中的秒转换为时长；零值保持不限制寿命的语义。
+func connectionMaxLifetime(seconds int64) (time.Duration, error) {
+	if seconds < 0 || seconds > math.MaxInt64/int64(time.Second) {
+		return 0, fmt.Errorf("max_life_time 必须在 0 到 %d 秒之间", math.MaxInt64/int64(time.Second))
 	}
-	// 插件处理
-	_ = rdb.client.WithPluginBeforeHandler(rdb.BeforePluginHandler, rdb.AfterPluginHandler)
-
-	return rdb, nil
+	return time.Duration(seconds) * time.Second, nil
 }
 
 // Get 获取 GORM 客户端实例。
@@ -122,7 +110,7 @@ func (db *db) Get() gorm.Client {
 // 返回:
 //   - error: 关闭连接时的错误
 func (db *db) Close() error {
-	return db.Get().SqlDB().Close()
+	return db.Get().Close()
 }
 
 // WithLogger 配置 GORM 日志记录器。
@@ -136,17 +124,3 @@ func (db *db) WithLogger() gorm_logger.Interface {
 		WithLoggerSlowThreshold(time.Second*1),
 		WithLoggerIgnoreRecordNotFoundError(true))
 }
-
-// BeforePluginHandler DB 插件前置处理方法，在 SQL 执行前调用。
-//
-// 参数:
-//   - rdb: GORM DB 实例
-func (db *db) BeforePluginHandler(rdb *gorm_db.DB) {}
-
-// AfterPluginHandler DB 插件后置处理方法，在 SQL 执行后调用。
-//
-// 参数:
-//   - rdb: GORM DB 实例
-//   - sql: 执行的 SQL 语句
-//   - ts: SQL 执行开始时间
-func (db *db) AfterPluginHandler(rdb *gorm_db.DB, sql string, ts time.Time) {}

@@ -1,13 +1,13 @@
 // Package app 提供应用管理功能。
 package app
 
-import "github.com/raylin666/go-utils/v2/server"
+import "github.com/devpety/go-utils/v3/server"
 
 // ServerAgreement 服务器协议信息。
 type ServerAgreement struct {
-	Network string // 网络类型（tcp）
-	Addr    string // 地址（host:port）
-	Target  string // 目标 URL
+	Network string // 配置的传输网络（tcp 等）
+	Addr    string // 有效 Endpoint 地址（host:port）
+	Target  string // 公布的访问 URL，包含 HTTP/HTTPS scheme
 }
 
 // Server 服务器接口，扩展 go-utils Server 接口。

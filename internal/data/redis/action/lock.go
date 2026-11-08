@@ -1,133 +1,212 @@
-// Package action 提供 Redis 分布式锁实现。
-// 基于 Redis SET NX EX 实现安全的分布式锁功能。
+// Package action 提供带有明确租约和取消边界的 Redis 分布式锁。
+//
+// 典型使用：
+//
+//	lock, err := NewLock(client, "order:123", 10*time.Second)
+//	if err != nil {
+//		return err
+//	}
+//
+//	acquired, err := lock.TryLock(ctx, 100*time.Millisecond, 2*time.Second)
+//	if err != nil {
+//		return err // Redis 故障或 ctx 已取消
+//	}
+//	if !acquired {
+//		// 锁被占用，按业务策略重试或放弃
+//		return nil
+//	}
+//
+//	defer lock.Unlock(context.Background()) // 幂等释放，避免忘记
+//
+//	// 临界区处理，必须在租约内完成；长任务可中途自查是否仍持有：
+//	if held, _ := lock.IsHeldByMe(ctx); !held {
+//		return errors.New("锁已失效")
+//	}
 package action
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"sync"
 	"time"
 
+	"github.com/devpety/go-utils/v3/cache/redis"
 	"github.com/google/uuid"
-	"github.com/raylin666/go-utils/v2/cache/redis"
 )
 
-// Lock Redis 分布式锁。
+var (
+	// ErrLockInUse 表示同一实例存在并发操作，调用方应串行管理租约。
+	ErrLockInUse = errors.New("当前锁实例正在执行其他操作")
+	// ErrLockAlreadyHeld 表示当前实例尚未释放上一次获取的租约。
+	ErrLockAlreadyHeld = errors.New("当前锁实例已持有锁")
+	// ErrLockNotOwned 表示租约已经失效，调用方不能继续受保护的操作。
+	ErrLockNotOwned = errors.New("锁已过期或所有权已转移")
+	// ErrLockLeaseExpired 表示网络往返已经耗尽本次获取的租约预算。
+	ErrLockLeaseExpired = errors.New("获取结果返回时锁租约已耗尽")
+)
+
+const unlockTimeout = 2 * time.Second
+
+// 同一令牌的命令重放只读取剩余租约，不续期；其他令牌不能获取已有锁。
+const acquireScript = `
+local current = redis.call("GET", KEYS[1])
+if current and current ~= ARGV[1] then
+    return 0
+end
+if not current then
+    redis.call("SET", KEYS[1], ARGV[1], "PX", ARGV[2])
+end
+local remaining = redis.call("PTTL", KEYS[1])
+if remaining <= 0 then
+    return -1
+end
+return remaining
+`
+
+const unlockScript = `
+local current = redis.call("GET", KEYS[1])
+if not current then
+    return 1
+end
+if current == ARGV[1] then
+    return redis.call("DEL", KEYS[1])
+end
+return 0
+`
+
+// Lock 管理一次独占租约，不自动续期；临界区必须在租约内完成。
+// 同一实例不能重复获取或并发变更所有权，每次获取使用独立令牌。
 type Lock struct {
-	ctx      context.Context // 上下文
-	client   redis.Client    // Redis 客户端
-	key      string          // 锁键名
-	value    string          // 锁值（UUID，用于标识锁持有者）
-	duration time.Duration   // 锁过期时间
+	client    redis.Client
+	key       string
+	duration  time.Duration
+	mu        sync.Mutex
+	value     string
+	expiresAt time.Time
 }
 
-// NewLock 创建新的分布式锁实例。
-// 默认过期时间为 1 秒。
-// 使用 UUID 作为锁值，确保只有锁的持有者才能释放锁。
-//
-// 参数:
-//   - ctx: 上下文
-//   - client: Redis 客户端
-//   - key: 锁键名
-//
-// 返回:
-//   - *Lock: 分布式锁实例
-func NewLock(ctx context.Context, client redis.Client, key string) *Lock {
-	return &Lock{
-		ctx:      ctx,
-		client:   client,
-		key:      key,
-		value:    uuid.New().String(),
-		duration: time.Second,
+// NewLock 创建锁；租约至少为一毫秒，并按 Redis 的毫秒精度向下取整。
+func NewLock(client redis.Client, key string, duration time.Duration) (*Lock, error) {
+	if client == nil {
+		return nil, errors.New("Redis 客户端不能为空")
 	}
+	if key == "" {
+		return nil, errors.New("锁键名不能为空")
+	}
+	if duration < time.Millisecond {
+		return nil, errors.New("锁租约不能小于一毫秒")
+	}
+	return &Lock{client: client, key: key, duration: duration.Truncate(time.Millisecond)}, nil
 }
 
-// WithDuration 设置锁过期时间。
-//
-// 参数:
-//   - duration: 过期时间
-//
-// 返回:
-//   - *Lock: 分布式锁实例
-func (lock *Lock) WithDuration(duration time.Duration) *Lock {
-	lock.duration = duration
-	return lock
-}
+// Lock 执行一次获取；false、nil 表示锁被占用，Redis 故障和取消均返回错误。
+func (lock *Lock) Lock(ctx context.Context) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if !lock.mu.TryLock() {
+		return false, ErrLockInUse
+	}
+	defer lock.mu.Unlock()
+	if lock.value != "" {
+		return false, ErrLockAlreadyHeld
+	}
 
-// Lock 尝试获取锁。
-// 使用 Redis SET NX EX 命令原子设置锁和过期时间。
-// 锁的值为 UUID，用于标识锁的持有者。
-//
-// 返回:
-//   - bool: true 表示成功获取锁
-func (lock *Lock) Lock() bool {
-	isOk, err := lock.client.SetNX(lock.ctx, lock.key, lock.value, lock.duration).Result()
+	value := uuid.NewString()
+	started := time.Now()
+	remainingMS, err := lock.client.Eval(ctx, acquireScript, []string{lock.key}, value, lock.duration.Milliseconds()).Int64()
 	if err != nil {
-		return false
+		return false, fmt.Errorf("获取 Redis 锁失败: %w", err)
 	}
-
-	return isOk
+	// 不将迟到的成功结果授予调用方；不确定写入由正租约自动回收。
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if remainingMS == 0 {
+		return false, nil
+	}
+	if remainingMS < 0 {
+		return false, ErrLockLeaseExpired
+	}
+	// 将剩余租约再扣除整个往返耗时，保守覆盖底层重试及响应延迟。
+	expiresAt := started.Add(time.Duration(min(remainingMS, lock.duration.Milliseconds())) * time.Millisecond)
+	if !time.Now().Before(expiresAt) {
+		return false, ErrLockLeaseExpired
+	}
+	lock.value = value
+	lock.expiresAt = expiresAt
+	return true, nil
 }
 
-// UnLock 释放锁。
-// 使用 Lua 脚本原子检查锁的值并删除。
-// 只有锁的持有者（value 匹配）才能释放锁，防止误释放他人的锁。
-func (lock *Lock) UnLock() {
-	script := `
-		if redis.call("GET", KEYS[1]) == ARGV[1] then
-			return redis.call("DEL", KEYS[1])
-		else
-			return 0
-		end
-	`
-
-	_, _ = lock.client.Eval(lock.ctx, script, []string{lock.key}, lock.value).Result()
-}
-
-// TryLock 尝试获取锁，支持重试。
-// 在指定时间内多次尝试获取锁，直到成功或超时。
-//
-// 参数:
-//   - retryInterval: 重试间隔
-//   - timeout: 总超时时间
-//
-// 返回:
-//   - bool: true 表示成功获取锁
-func (lock *Lock) TryLock(retryInterval, timeout time.Duration) bool {
-	ctx, cancel := context.WithTimeout(lock.ctx, timeout)
+// TryLock 在调用方期限和 timeout 中较早的期限内重试，取消可中断重试等待。
+func (lock *Lock) TryLock(ctx context.Context, retryInterval, timeout time.Duration) (bool, error) {
+	if retryInterval <= 0 || timeout <= 0 {
+		return false, errors.New("重试间隔和获取超时必须大于零")
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-
 	for {
+		acquired, err := lock.Lock(ctx)
+		if err != nil || acquired {
+			return acquired, err
+		}
+		timer := time.NewTimer(retryInterval)
 		select {
 		case <-ctx.Done():
-			return false
-		default:
-			if lock.Lock() {
-				return true
-			}
-			time.Sleep(retryInterval)
+			timer.Stop()
+			return false, ctx.Err()
+		case <-timer.C:
 		}
 	}
 }
 
-// IsLocked 检查锁是否被持有（不检查持有者）。
-//
-// 返回:
-//   - bool: true 表示锁被持有
-func (lock *Lock) IsLocked() bool {
-	value, err := lock.client.Get(lock.ctx, lock.key).Result()
-	if err != nil {
-		return false
+// Unlock 使用独立的两秒清理期限，保留上下文值但不继承请求取消。
+// 未持有锁或键已不存在时幂等返回；Redis 故障保留令牌以便重试，其他令牌持有时返回所有权丢失。
+func (lock *Lock) Unlock(ctx context.Context) error {
+	if !lock.mu.TryLock() {
+		return ErrLockInUse
 	}
-	return value != ""
+	defer lock.mu.Unlock()
+	if lock.value == "" {
+		return nil
+	}
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), unlockTimeout)
+	defer cancel()
+	deleted, err := lock.client.Eval(cleanupCtx, unlockScript, []string{lock.key}, lock.value).Int64()
+	if err != nil {
+		return fmt.Errorf("释放 Redis 锁失败: %w", err)
+	}
+	lock.value = ""
+	lock.expiresAt = time.Time{}
+	if deleted == 0 {
+		return ErrLockNotOwned
+	}
+	return nil
 }
 
-// IsHeldByMe 检查锁是否由当前实例持有。
-//
-// 返回:
-//   - bool: true 表示锁由当前实例持有
-func (lock *Lock) IsHeldByMe() bool {
-	value, err := lock.client.Get(lock.ctx, lock.key).Result()
+// IsLocked 返回键是否存在的即时快照，不能代替原子获取。
+func (lock *Lock) IsLocked(ctx context.Context) (bool, error) {
+	count, err := lock.client.Exists(ctx, lock.key).Result()
 	if err != nil {
-		return false
+		return false, fmt.Errorf("检查 Redis 锁失败: %w", err)
 	}
-	return value == lock.value
+	return count > 0, nil
+}
+
+// IsHeldByMe 返回当前实例是否仍持有租约的即时快照。
+func (lock *Lock) IsHeldByMe(ctx context.Context) (bool, error) {
+	if !lock.mu.TryLock() {
+		return false, ErrLockInUse
+	}
+	defer lock.mu.Unlock()
+	if lock.value == "" || !time.Now().Before(lock.expiresAt) {
+		return false, nil
+	}
+	const script = `if redis.call("GET", KEYS[1]) == ARGV[1] then return 1 end return 0`
+	owned, err := lock.client.Eval(ctx, script, []string{lock.key}, lock.value).Int64()
+	if err != nil {
+		return false, fmt.Errorf("检查 Redis 锁所有权失败: %w", err)
+	}
+	return owned == 1 && time.Now().Before(lock.expiresAt), nil
 }

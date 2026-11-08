@@ -2,27 +2,31 @@
 package errcode
 
 import (
+	"maps"
 	"strings"
 	"sync"
 )
 
 // registry 全局错误码注册表实例。
 var registry = &codeRegistry{
-	local:     ZhCN,
-	codeTexts: zhCNText,
-	httpCodes: httpCode,
+	local: ZhCN,
+	textsByLocale: map[string]map[int]string{
+		ZhCN: maps.Clone(zhCNText),
+		EnUS: maps.Clone(enUSText),
+	},
+	httpCodes: maps.Clone(httpCode),
 }
 
 // codeRegistry 错误码注册表结构体。
 // 支持多语言错误消息和 HTTP 状态码映射。
 type codeRegistry struct {
-	mu        sync.RWMutex   // 读写锁，保证并发安全
-	local     string         // 当前语言
-	codeTexts map[int]string // 错误码消息映射
-	httpCodes map[int]int    // 错误码到 HTTP 状态码映射
+	mu            sync.RWMutex              // 读写锁，保证并发安全
+	local         string                    // 当前语言
+	textsByLocale map[string]map[int]string // 各语言独立的错误码消息映射
+	httpCodes     map[int]int               // 错误码到 HTTP 状态码映射
 }
 
-// NewRegistry 创建错误码注册表并设置语言。
+// NewRegistry 设置当前进程语言，不清空已经注册的翻译。
 //
 // 参数:
 //   - local: 语言代码 (zh-cn/en-us)
@@ -34,13 +38,10 @@ func NewRegistry(local string) {
 	switch local {
 	case ZhCN:
 		registry.local = ZhCN
-		registry.codeTexts = zhCNText
 	case EnUS:
 		registry.local = EnUS
-		registry.codeTexts = enUSText
 	default:
 		registry.local = ZhCN
-		registry.codeTexts = zhCNText
 	}
 }
 
@@ -65,7 +66,7 @@ func RegisterHTTPCodes(codes map[int]int) {
 	}
 }
 
-// RegisterTexts 注册错误码消息文本。
+// RegisterTexts 向指定语言注册消息，不切换当前语言。
 //
 // 参数:
 //   - local: 语言代码
@@ -75,8 +76,11 @@ func RegisterTexts(local string, texts map[int]string) {
 	defer registry.mu.Unlock()
 
 	local = strings.ToLower(local)
+	if registry.textsByLocale[local] == nil {
+		registry.textsByLocale[local] = make(map[int]string)
+	}
 	for key, value := range texts {
-		registry.codeTexts[key] = value
+		registry.textsByLocale[local][key] = value
 	}
 }
 
@@ -91,7 +95,7 @@ func GetText(code int) string {
 	registry.mu.RLock()
 	defer registry.mu.RUnlock()
 
-	return registry.codeTexts[code]
+	return registry.textsByLocale[registry.local][code]
 }
 
 // GetHTTPCode 根据业务错误码获取 HTTP 状态码。
@@ -109,7 +113,7 @@ func GetHTTPCode(code int) int {
 }
 
 // New 根据业务错误码创建业务错误实例。
-// 自动从注册表获取 HTTP 状态码和消息文本。
+// HTTP 状态码在创建时获取，消息文本在读取时按当前语言解析。
 //
 // 参数:
 //   - code: 业务错误码
@@ -117,5 +121,9 @@ func GetHTTPCode(code int) int {
 // 返回:
 //   - BusinessError: 业务错误实例
 func New(code int) BusinessError {
-	return NewError(GetHTTPCode(code), code, GetText(code))
+	return &businessError{
+		httpCode:        GetHTTPCode(code),
+		businessCode:    code,
+		registryMessage: true,
+	}
 }

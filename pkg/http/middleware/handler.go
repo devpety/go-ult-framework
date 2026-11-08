@@ -2,38 +2,44 @@
 package middleware
 
 import (
+	utilsMiddleware "github.com/devpety/go-utils/v3/middleware"
 	"github.com/gin-gonic/gin"
-	utilsMiddleware "github.com/raylin666/go-utils/v2/middleware"
 )
 
 // Priority 中间件优先级类型。
 type Priority = utilsMiddleware.Priority
 
-// HandlerFunc 中间件处理函数类型。
-type HandlerFunc func(ctx *gin.Context)
+// HandlerFunc 统一使用 Gin 的中间件处理函数类型。
+type HandlerFunc = gin.HandlerFunc
 
 // Middleware HTTP 框架中间件接口。
-// 扩展通用 Middleware 接口，提供框架特定的处理函数和依赖管理。
+// 处理函数和依赖声明在编译阶段约束。
 type Middleware interface {
-	utilsMiddleware.Middleware
-	// Handler 返回中间件处理函数。
-	// 这是一个类型安全的接口，确保返回 HandlerFunc。
-	Handler() utilsMiddleware.Handler
+	Name() string
+	Priority() Priority
+	Handler() HandlerFunc
 	// Dependencies 返回中间件依赖列表。
-	// 用于验证中间件依赖是否满足，避免运行时错误。
+	// 只校验依赖是否存在于有效注册列表，不改变优先级执行顺序。
 	// 返回依赖的中间件名称列表（例如：["recovery", "request"]）。
 	Dependencies() []string
 }
 
 // middlewareFunc 函数式中间件实现。
 type middlewareFunc struct {
-	utilsMiddleware.Middleware
+	name         string
+	priority     Priority
 	handler      HandlerFunc
 	dependencies []string // 依赖的中间件名称列表
 }
 
+// Name 返回中间件名称。
+func (m *middlewareFunc) Name() string { return m.name }
+
+// Priority 返回中间件优先级。
+func (m *middlewareFunc) Priority() Priority { return m.priority }
+
 // Handler 返回中间件处理函数。
-func (m *middlewareFunc) Handler() utilsMiddleware.Handler {
+func (m *middlewareFunc) Handler() HandlerFunc {
 	return m.handler
 }
 
@@ -52,13 +58,8 @@ func (m *middlewareFunc) Dependencies() []string {
 //
 // 返回:
 //   - Middleware: 中间件实例
-func NewMiddlewareFunc(name string, priority utilsMiddleware.Priority, handler HandlerFunc) Middleware {
-	base := utilsMiddleware.NewMiddlewareFunc(name, priority, handler)
-	return &middlewareFunc{
-		Middleware:   base,
-		handler:      handler,
-		dependencies: []string{}, // 默认无依赖
-	}
+func NewMiddlewareFunc(name string, priority Priority, handler HandlerFunc) Middleware {
+	return NewMiddlewareFuncWithDependencies(name, priority, handler, nil)
 }
 
 // NewMiddlewareFuncWithDependencies 创建带依赖的函数式中间件。
@@ -73,13 +74,13 @@ func NewMiddlewareFunc(name string, priority utilsMiddleware.Priority, handler H
 //   - Middleware: 中间件实例
 func NewMiddlewareFuncWithDependencies(
 	name string,
-	priority utilsMiddleware.Priority,
+	priority Priority,
 	handler HandlerFunc,
 	dependencies []string,
 ) Middleware {
-	base := utilsMiddleware.NewMiddlewareFunc(name, priority, handler)
 	return &middlewareFunc{
-		Middleware:   base,
+		name:         name,
+		priority:     priority,
 		handler:      handler,
 		dependencies: dependencies,
 	}

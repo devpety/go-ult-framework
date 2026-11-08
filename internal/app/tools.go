@@ -5,17 +5,17 @@ package app
 import (
 	"ult/pkg/logger"
 
-	"github.com/raylin666/go-utils/v2/auth"
-	"github.com/raylin666/go-utils/v2/server/system"
+	"github.com/devpety/go-utils/v3/auth"
+	"github.com/devpety/go-utils/v3/server/system"
 )
 
 // Tools 应用公共工具包结构体。
 // 封装日志、日期时间、环境、JWT 等工具实例。
 type Tools struct {
-	logger      *logger.Logger    // 日志实例
-	datetime    *system.Datetime  // 日期时间实例
+	logger      *logger.Logger     // 日志实例
+	datetime    *system.Datetime   // 日期时间实例
 	environment system.Environment // 环境配置
-	jwt         auth.JWT          // JWT 认证实例
+	jwt         auth.JWT           // JWT 认证实例
 }
 
 // NewTools 创建公共工具实例。

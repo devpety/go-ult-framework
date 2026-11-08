@@ -9,9 +9,9 @@ import (
 	"ult/pkg/types"
 	pkgtypes "ult/pkg/types"
 
+	utilsMiddleware "github.com/devpety/go-utils/v3/middleware"
+	"github.com/devpety/go-utils/v3/validator"
 	"github.com/gin-gonic/gin"
-	utilsMiddleware "github.com/raylin666/go-utils/v2/middleware"
-	"github.com/raylin666/go-utils/v2/validator"
 )
 
 // RequestConfig Request 中间件配置。
@@ -43,7 +43,7 @@ type Response func(reqTime time.Time, ctx *gin.Context)
 
 // Request 请求处理中间件。
 // 负责 Context 初始化、验证器设置和响应处理。
-// 该中间件应该在所有其他中间件之前执行，确保 Context 在中间件中可用。
+// 该中间件在 Recovery 和 CORS 之后、业务中间件之前执行，确保业务 Context 可用。
 type Request struct {
 	config *RequestConfig
 }
@@ -85,8 +85,8 @@ func (r *Request) Dependencies() []string {
 	return []string{types.RecoveryMiddlewareName} // 依赖 Recovery 中间件
 }
 
-// Handler 返回中间件处理函数（实现 utilsMiddleware.Middleware 接口）。
-func (r *Request) Handler() utilsMiddleware.Handler {
+// Handler 返回中间件处理函数。
+func (r *Request) Handler() HandlerFunc {
 	return r.handler()
 }
 
@@ -94,11 +94,6 @@ func (r *Request) Handler() utilsMiddleware.Handler {
 // 初始化 Context、设置验证器、处理响应。
 func (r *Request) handler() HandlerFunc {
 	return func(ctx *gin.Context) {
-		// 拦截 404 请求路由
-		if ctx.Writer.Status() == http.StatusNotFound {
-			return
-		}
-
 		// 在初始化前登记收尾，初始化失败也走统一错误响应。
 		ts := time.Now()
 		ctx.Set(requestCompletionKey, &requestCompletion{response: func() {
@@ -106,16 +101,6 @@ func (r *Request) handler() HandlerFunc {
 				r.config.Response(ts, ctx)
 			}
 		}})
-		if managed, _ := ctx.Get(requestCompletionOwnerKey); managed != true {
-			// 兼容单独使用 Request 的正常路径；panic 留给外层恢复后收尾。
-			defer func() {
-				if recovered := recover(); recovered != nil {
-					panic(recovered)
-				}
-				CompleteRequest(ctx)
-			}()
-		}
-
 		// 初始化 Context（通过配置的初始化函数）
 		if r.config.ContextInitializer != nil {
 			appCtx, err := r.config.ContextInitializer(ctx)
@@ -123,7 +108,13 @@ func (r *Request) handler() HandlerFunc {
 				if _, exists := ctx.Get(pkgtypes.ContextAbortErrorNameKey); !exists {
 					ctx.Set(pkgtypes.ContextAbortErrorNameKey, errcode.New(errcode.ServerError).WithStackError(err))
 				}
-				ctx.Status(http.StatusInternalServerError)
+				status := http.StatusInternalServerError
+				if value, exists := ctx.Get(pkgtypes.ContextAbortErrorNameKey); exists {
+					if failure, ok := value.(errcode.BusinessError); ok && failure != nil && failure.HTTPCode() > 0 {
+						status = failure.HTTPCode()
+					}
+				}
+				ctx.Status(status)
 				ctx.Abort()
 				return
 			}

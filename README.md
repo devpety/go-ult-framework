@@ -1,1845 +1,823 @@
-<div align="center">
+<h1 align="center">ULT Framework</h1>
 
-<h3 align="center">🚀 基于 GIN 的模块化 API 框架 🚀</h3>
-
-<p align="center">
-  <i>快速、简洁、优雅的 API 开发体验</i>
-</p>
-
-<br/>
+<p align="center"><strong>基于 Gin 与 Wire 的 Go HTTP 应用框架</strong></p>
 
 <p align="center">
-  <a href="https://golang.org">
-    <img src="https://img.shields.io/badge/Go-1.23.0+-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go Version"/>
-  </a>
-  <a href="https://github.com/gin-gonic/gin">
-    <img src="https://img.shields.io/badge/Gin-1.11.0-00ADD8?style=flat-square&logo=gin&logoColor=white" alt="Gin Version"/>
-  </a>
-  <a href="https://opensource.org/licenses/MIT">
-    <img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square&logoColor=white" alt="License"/>
-  </a>
-  <a href="https://goreportcard.com/report/github.com/raylin666/go-ult-framework">
-    <img src="https://goreportcard.com/badge/github.com/raylin666/go-ult-framework?style=flat-square" alt="Go Report Card"/>
-  </a>
+  以清晰分层组织业务，统一请求处理、数据访问与服务生命周期。
 </p>
-
-<br/>
 
 <p align="center">
-  <a href="./README_EN.md">English</a> • <a href="#">简体中文</a>
+  <a href="go.mod"><img src="https://img.shields.io/badge/Go-1.23%2B-00ADD8?style=flat-square&amp;logo=go&amp;logoColor=white" alt="Go 1.23.0 及以上"></a>
+  <a href="go.mod"><img src="https://img.shields.io/badge/Gin-v1.11.0-008ECF?style=flat-square" alt="Gin v1.11.0"></a>
+  <a href="go.mod"><img src="https://img.shields.io/badge/Wire-v0.7.0-008ECF?style=flat-square" alt="Wire v0.7.0"></a>
 </p>
 
-</div>
-
-<br/>
+<p align="center">
+  <a href="#框架概览">框架概览</a> ·
+  <a href="#快速开始">快速开始</a> ·
+  <a href="#开发指南">开发指南</a> ·
+  <a href="#配置参考">配置参考</a> ·
+  <a href="#运行与部署">运行与部署</a> ·
+  <a href="#命令参考">命令参考</a>
+</p>
 
 ---
 
-## 简介
+## 框架概览
 
-ULT Web API Framework 是基于 `GIN` 进行模块化设计的 API 框架，封装了常用的功能，使用简单，致力于进行快速的业务研发。框架增加了更多限制和约束，帮助项目组规避混乱无序及自由随意的编码，提升代码质量和团队协作效率。
+ULT Framework 在 Gin 之上封装 HTTP 请求处理、数据连接和应用生命周期。业务依赖通过构造函数声明，由 Wire 在编译前生成装配与清理代码。Go 模块路径为 `ult`。
 
-提供了方便快捷的 `Makefile` 文件，帮你快速生成、构建、执行项目内容，实现命令统一管理，大大提高开发效率，让开发者更专注于业务代码。
+应用按 `router → api → service → repo → Data` 分层，基础组件集中在 `pkg/`。仓库提供健康检查接口和 `Test` 数据访问示例；业务 API、鉴权中间件与权限规则由应用接入。
 
-> 💡 **提示**: 当所需命令不存在时可添加到 Makefile 中，实现命令统一管理。
+### 核心能力
 
-## 核心特性
+| 能力 | 内容 |
+| --- | --- |
+| HTTP 处理 | 构建期路由注册、路由分组、中间件编排、参数绑定与校验、统一响应 |
+| 错误与链路 | 业务错误码、HTTP 状态映射、多语言消息、TraceID 与分类日志 |
+| 数据访问 | MySQL / GORM、类型化查询器、命名数据库与 Redis 连接、事务原语及 Redis 租约锁 |
+| 依赖装配 | Wire 编译期注入、显式构造函数、初始化错误传递与资源清理链 |
+| 生命周期 | 有限预算的依赖初始化、连接重试、信号停机与连接回收 |
+| 配套工具 | JWT 签发与验签、健康检查、就绪探针、可选邮件通知与 pprof |
 
-<table>
-<tr>
-<td width="50%">
+<details>
+<summary>文档导航</summary>
 
-### 🏗️ 架构设计
-- **分层架构**: 经典分层架构 + 依赖注入设计模式
-- **严格调用链**: api → service → data 单向调用
-- **依赖注入**: Google Wire 实现，降低组件耦合
-- **中间件管理**: 支持优先级和依赖管理
-
-</td>
-<td width="50%">
-
-### 🔧 功能特性
-- **统一错误处理**: 完整错误码系统，支持多语言
-- **多连接支持**: 多数据库和 Redis 连接配置
-- **代码生成**: 集成 GORM Gen，自动生成查询器
-- **优雅关闭**: 完整生命周期管理
-
-</td>
-</tr>
-<tr>
-<td width="50%">
-
-### 🚀 性能优化
-- **并发安全**: TraceID 使用 sync.Once 确保安全
-- **对象池**: Context 使用 sync.Pool 复用
-- **内存安全**: RawData 返回副本，避免泄漏
-- **链路追踪**: 内置 TraceID，便于分布式追踪
-
-</td>
-<td width="50%">
-
-### 🛡️ 安全特性
-- **告警通知**: Recovery 中间件支持邮件告警
-- **配置管理**: YAML 配置，支持多环境
-- **Docker 支持**: 完整的容器化部署方案
-- **性能剖析**: 集成 Pprof 性能分析
-
-</td>
-</tr>
-</table>
-
----
-
-## 目录
-
-- [简介](#简介)
-- [核心特性](#核心特性)
-- [整体架构设计](#整体架构设计)
-- [集成组件](#集成组件)
-- [目录结构](#目录结构)
 - [快速开始](#快速开始)
-- [Makefile 命令说明](#makefile-命令说明)
-- [开发规范](#开发规范)
-- [模块开发指南](#模块开发指南)
-- [中间件管理](#中间件管理)
-- [错误码管理](#错误码管理)
-- [数据校验](#数据校验)
-- [性能优化](#性能优化)
-- [并发安全性](#并发安全性)
-- [配置管理](#配置管理)
-- [常见问题](#常见问题)
-- [版本信息](#版本信息)
-- [许可证](#许可证)
-- [贡献指南](#贡献指南)
-- [联系方式](#联系方式)
-
----
-
-## 整体架构设计
-
-### 架构概览
-
-本框架采用经典的 **分层架构 + 依赖注入** 设计模式，整体架构清晰合理：
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                              cmd/                                        │
-│                     (入口层 + Wire 依赖注入)                              │
-├─────────────────────────────────────────────────────────────────────────┤
-│                           internal/                                      │
-│  ┌──────────────┬──────────────┬──────────────┬──────────────┬───────┐ │
-│  │    router    │      api     │    service   │     data     │  app  │ │
-│  │   (路由层)   │   (处理层)   │   (逻辑层)   │   (数据层)   │(工具) │ │
-│  └──────────────┴──────────────┴──────────────┴──────────────┴───────┘ │
-│  ┌──────────────────────────────────────────────────────────────────┐  │
-│  │                         server                                    │  │
-│  │                       (服务器层)                                   │  │
-│  └──────────────────────────────────────────────────────────────────┘  │
-├─────────────────────────────────────────────────────────────────────────┤
-│                              pkg/                                        │
-│  ┌──────────┬──────────┬──────────┬──────────┬──────────┬───────────┐  │
-│  │   http   │    db    │  cache   │  logger  │  app     │  types    │  │
-│  │(HTTP封装)│ (数据库) │ (缓存)   │  (日志)  │(应用管理)│ (类型)    │  │
-│  ├──────────┴──────────┴──────────┴──────────┴──────────┴───────────┤  │
-│  │  repositories  │  proposal  │          notify                    │  │
-│  │  (数据仓库)    │  (告警提案)│        (告警通知)                  │  │
-│  └──────────────────────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────────────────────┐  │
-│  │             pkg/http/middleware (中间件管理)                      │  │
-│  │     Recovery │ CORS │ Request │ 自定义中间件                      │  │
-│  └──────────────────────────────────────────────────────────────────┘  │
-├─────────────────────────────────────────────────────────────────────────┤
-│                            config/                                       │
-│                         (配置管理)                                        │
-├─────────────────────────────────────────────────────────────────────────┤
-│                            errcode/                                      │
-│                        (错误码定义)                                       │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-### 分层职责说明
-
-| 层级 | 目录 | 职责说明 |
-| :---: | :--- | :--- |
-| 🎯 **入口层** | `cmd/` | 应用启动入口，Wire 依赖注入绑定 |
-| 🛣️ **路由层** | `internal/router/` | HTTP 路由注册，将 API 处理器绑定到路由路径 |
-| 📡 **处理层** | `internal/api/` | HTTP 请求处理，数据校验和响应，调用服务层 |
-| 💡 **逻辑层** | `internal/service/` | 业务逻辑处理，调用数据层获取数据 |
-| 💾 **数据层** | `internal/data/` | 数据仓库实例管理，数据库/缓存/RPC 操作 |
-| 🖥️ **服务器层** | `internal/server/` | HTTP 服务器创建和配置 |
-| 🔧 **工具层** | `internal/app/` | 公共工具包（日志、日期时间、环境、JWT 等） |
-| 🌐 **HTTP封装** | `pkg/http/` | Gin 框架封装，Context、Handler、Response、中间件管理 |
-| 🛡️ **中间件** | `pkg/http/middleware/` | Recovery、CORS、Request 中间件及中间件管理器 |
-| 🗄️ **数据库** | `pkg/db/` | GORM 数据库连接封装，支持连接重试 |
-| 📦 **缓存** | `pkg/cache/` | Redis 连接封装，支持连接重试 |
-| 📝 **日志** | `pkg/logger/` | Zap 日志封装，支持文件轮转和请求/SQL 日志 |
-| ⚙️ **应用管理** | `pkg/app/` | 应用生命周期管理，服务器接口定义 |
-| 📋 **类型定义** | `pkg/types/` | 上下文类型、链路追踪类型、中间件常量 |
-| 🔔 **告警提案** | `pkg/proposal/` | 告警消息定义和通知处理器类型 |
-| 📧 **告警通知** | `pkg/notify/` | 异常恢复告警通知（邮件等） |
-| ⚙️ **配置** | `config/` | YAML 配置文件加载和解析 |
-| 🔢 **错误码** | `errcode/` | 统一错误码定义和管理，支持多语言 |
-| 🏪 **数据仓库** | `pkg/repositories/` | 数据仓库抽象层，管理多连接 |
-
-### 调用链设计
-
-项目定义了严格的单向调用链：
-
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│    api      │ ──> │   service   │ ──> │    data     │
-│  (处理层)   │     │  (逻辑层)   │     │  (数据层)   │
-└─────────────┘     └─────────────┘     └─────────────┘
-```
-
-> ⚠️ **核心原则**
-> - 单向依赖，避免循环调用
-> - 职责分离清晰，便于维护和测试
-> - `api` 层只做数据校验和响应
-> - `service` 层专注业务逻辑
-> - `data` 层处理数据操作
-
-### 依赖注入设计
-
-采用 Google Wire 实现依赖注入，降低组件耦合：
-
-<details>
-<summary>🔧 查看 Wire 配置示例</summary>
-
-```go
-// cmd/wire.go
-//go:build wireinject
-// +build wireinject
-
-package main
-
-import (
-    "ult/config"
-    "ult/internal/api"
-    "ult/internal/app"
-    "ult/internal/data"
-    "ult/internal/data/repo"
-    "ult/internal/router"
-    "ult/internal/server"
-    "ult/internal/service"
-    pkgapp "ult/pkg/app"
-
-    "github.com/google/wire"
-)
-
-func initApp(conf *config.Config, tools *app.Tools) (*pkgapp.App, func(), error) {
-    panic(wire.Build(
-        data.ProviderSet,
-        repo.ProviderSet,
-        service.ProviderSet,
-        api.ProviderSet,
-        router.ProviderSet,
-        server.ProviderSet,
-        newApp))
-}
-```
-
-各模块通过 `ProviderSet` 注册依赖，Wire 自动生成依赖注入代码。注意实际使用 `panic(wire.Build(...))` 模式，这是 Wire 的标准用法。
+- [架构与目录](#架构与目录)
+- [开发指南](#开发指南)
+  - [HTTP 构建与路由](#http-构建与路由)
+  - [中间件](#中间件)
+  - [请求绑定与响应](#请求绑定与响应)
+  - [业务错误](#业务错误)
+  - [请求上下文与链路标识](#请求上下文与链路标识)
+  - [数据访问与生成](#数据访问与生成)
+  - [JWT 工具](#jwt-工具)
+  - [新增业务模块](#新增业务模块)
+- [配置参考](#配置参考)
+- [运行与部署](#运行与部署)
+- [命令参考](#命令参考)
+- [主要依赖](#主要依赖)
+- [致谢](#致谢)
 
 </details>
-
-<details>
-<summary>📝 查看 Wire 自动生成的依赖链</summary>
-
-```go
-// cmd/wire_gen.go (Wire 自动生成)
-func initApp(conf *config.Config, tools *app.Tools) (*app2.App, func(), error) {
-    dataData, cleanup := data.NewData(conf, tools)
-    dataRepo := data.NewDataRepo(dataData)
-    testRepo := repo.NewTestRepo(dataData)
-    heartbeatService := service.NewHeartbeatService(dataRepo, testRepo, tools)
-    heartbeatInterface := api.NewHeartbeatHandler(heartbeatService, tools)
-    httpRouter := router.NewHTTPRouter(heartbeatInterface)
-    httpServer := server.NewHTTPServer(conf, tools, httpRouter)
-    appApp := newApp(conf, tools, httpServer)
-    return appApp, func() { cleanup() }, nil
-}
-```
-
-</details>
-
-### 数据流设计
-
-<details>
-<summary>📊 查看数据流图</summary>
-
-```
-HTTP Request
-    │
-    ▼
-┌─────────────────────────────────────┐
-│         pkg/http/server             │
-│    (Gin Engine + Middleware)        │
-└─────────────────────────────────────┘
-    │
-    ▼
-┌─────────────────────────────────────┐
-│  Recovery 中间件 (PriorityHighest)  │
-│  - 异常恢复、告警通知               │
-└─────────────────────────────────────┘
-    │
-    ▼
-┌─────────────────────────────────────┐
-│  Request 中间件 (PriorityHigh)      │
-│  - Context 初始化 (对象池复用)      │
-│  - 验证器设置                       │
-│  - 响应处理 (defer)                 │
-│  - 404 拦截                         │
-│  依赖: Recovery                     │
-└─────────────────────────────────────┘
-    │
-    ▼
-┌─────────────────────────────────────┐
-│  CORS 中间件 (PriorityHigh)         │
-│  - 跨域处理                         │
-└─────────────────────────────────────┘
-    │
-    ▼
-┌─────────────────────────────────────┐
-│        internal/router               │
-│         (Route Matching)             │
-└─────────────────────────────────────┘
-    │
-    ▼
-┌─────────────────────────────────────┐
-│          internal/api                │
-│    (Request Validation + Response)   │
-│    - 参数绑定                        │
-│    - 数据校验 (Validator)           │
-│    - 调用 Service                    │
-│    - 响应处理                        │
-└─────────────────────────────────────┘
-    │
-    ▼
-┌─────────────────────────────────────┐
-│        internal/service              │
-│       (Business Logic)               │
-│    - 业务逻辑处理                    │
-│    - 调用 Data Repo                  │
-│    - 数据转换                        │
-└─────────────────────────────────────┘
-    │
-    ▼
-┌─────────────────────────────────────┐
-│          internal/data               │
-│    (Database/Cache Operations)       │
-│    - 数据库查询                      │
-│    - Redis 操作                      │
-│    - 事务管理                        │
-└─────────────────────────────────────┘
-    │
-    ▼
-HTTP Response
-```
-
-</details>
-
-### 错误处理设计
-
-统一的错误处理机制：
-
-<details>
-<summary>🔧 查看错误处理接口定义</summary>
-
-```go
-// 错误码注册表
-type codeRegistry struct {
-    mu        sync.RWMutex       // 并发安全
-    local     string             // 语言设置
-    codeTexts map[int]string     // 错误码消息
-    httpCodes map[int]int        // HTTP状态码映射
-}
-
-// 业务错误接口
-type BusinessError interface {
-    error                                    // 实现 error 接口，可作为标准错误使用
-    WithStackError(err error) BusinessError  // 堆栈追踪（同时设置描述为 err.Error()）
-    StackError() error                       // 获取堆栈错误
-    HTTPCode() int                           // HTTP状态码
-    BusinessCode() int                       // 业务错误码
-    Message() string                         // 错误消息
-    Desc() string                            // 错误描述
-    Alert() BusinessError                    // 告警标记
-    WithDesc(desc string) BusinessError      // 设置错误描述
-    IsAlert() bool                           // 是否需要告警
-}
-
-// Error() 方法实现
-// 返回完整的错误信息：消息 + 描述
-func (e *businessError) Error() string {
-    if e.desc != "" {
-        return e.message + ": " + e.desc
-    }
-    return e.message
-}
-```
-
-</details>
-
-> ✅ **关键改进**
-> - BusinessError 实现了 error 接口，可以作为标准错误使用
-> - 符合 Go 的错误处理惯例（`if err != nil`）
-> - Validator() 方法返回 error 类型，语义更清晰
-> - WithStackError() 同时设置描述为 err.Error()，确保堆栈错误有描述信息
-
-<details>
-<summary>📝 查看错误码使用方式</summary>
-
-错误码常量是 `int` 类型，需要通过 `errcode.New()` 创建 BusinessError 实例，或使用 `vars.go` 中预创建的 `Err*` 变量：
-
-```go
-// 方式一: 使用 errcode.New() 从错误码常量创建
-errcode.New(errcode.DataSelectError).WithDesc("数据库查询失败")
-
-// 方式二: 使用预创建的 Err* 变量（推荐）
-errcode.ErrDataSelectError.WithDesc("数据库查询失败")
-
-// 设置堆栈信息
-errcode.New(errcode.ServerError).WithStackError(err)
-// 或
-errcode.ErrServerError.WithStackError(err)
-
-// 设置告警标记
-errcode.ErrServerError.Alert()
-```
-
-</details>
-
----
-
-## 集成组件
-
-| 名称 | 描述 | 版本 |
-| :---: | :--- | :---: |
-| **Gin** | HTTP Web 框架 | [1.11.0](https://github.com/gin-gonic/gin) |
-| **GORM** | ORM 数据库组件 | [1.31.1](https://gorm.io) |
-| **Wire** | 依赖注入 | [0.7.0](https://github.com/google/wire) |
-| **Zap** | 结构化日志 | [1.27.0](https://github.com/uber-go/zap) |
-| **go-redis** | Redis 客户端 | [9.0.5](https://github.com/go-redis/redis) |
-| **JWT** | JWT 认证 | [5.3.1](https://github.com/golang-jwt/jwt) |
-| **Validator** | 数据校验 | [10.27.0](https://github.com/go-playground/validator) |
-| **CORS** | 跨域处理 | - |
-| **Pprof** | 性能剖析 | [1.4.0](https://golang.org/pkg/net/http/pprof) |
-| **UUID** | 唯一标识生成 | [1.6.0](https://github.com/google/uuid) |
-| **YAML** | 配置文件解析 | [3.0.1](https://github.com/go-yaml/yaml) |
-| **go-utils** | 工具库 | v2 |
-
----
-
-## 目录结构
-
-<details>
-<summary>📁 查看完整目录结构</summary>
-
-```
-go-ult-framework/
-├── cmd/                    # 应用入口层
-│   ├── main.go             # 主程序入口
-│   ├── wire.go             # Wire 依赖注入定义
-│   └── wire_gen.go         # Wire 自动生成代码
-├── config/                 # 配置管理层
-│   ├── autoload.go         # 配置加载器
-│   ├── autoload/           # 配置模块
-│   │   ├── app.go          # 应用配置
-│   │   ├── db.go           # 数据库配置
-│   │   ├── server.go       # 服务器配置
-│   │   ├── redis.go        # Redis 配置
-│   │   ├── jwt.go          # JWT 配置
-│   │   ├── logger.go       # 日志配置
-│   │   ├── language.go     # 语言配置
-│   │   ├── datetime.go     # 时间配置
-│   │   ├── notify.go       # 告警配置
-│   │   └── validator.go    # 校验器配置
-│   └── .env.example.yml    # 配置示例文件
-├── errcode/                # 错误码定义层
-│   ├── error.go            # 业务错误接口和实现
-│   ├── code.go             # 错误码常量
-│   ├── register.go         # 错误码注册表
-│   ├── errhttp.go          # HTTP状态码映射
-│   ├── vars.go             # 预创建 BusinessError 变量
-│   ├── zh-cn.go            # 中文错误消息
-│   └── en-us.go            # 英文错误消息
-├── generate/               # 代码生成器
-│   └── gormgen/            # GORM Gen 生成器
-│       ├── main.go         # 生成器入口
-│       └── db/             # 生成器配置
-│           └── default.go  # 默认数据库配置
-├── internal/               # 内部业务层（不可外部引用）
-│   ├── api/                # API 处理层
-│   │   ├── heartbeat.go    # 健康检查 API
-│   │   └── wire.go         # Wire ProviderSet
-│   ├── app/                # 应用工具包
-│   │   ├── tools.go        # 公共工具实例（Logger/Datetime/Environment/JWT）
-│   │   └ logo.go           # 启动信息打印
-│   ├── data/               # 数据层
-│   │   ├── data.go         # 数据仓库管理（Data 接口、DataRepo）
-│   │   ├── model/          # 数据模型
-│   │   │   ├── model.go    # 基础模型
-│   │   │   └ test.go       # 测试模型
-│   │   ├── repo/           # 数据仓库实现
-│   │   │   ├── test.go     # 测试仓库
-│   │   │   └ wire.go       # Wire ProviderSet
-│   │   ├── redis/          # Redis 操作封装
-│   │   │   ├── client.go   # Redis 客户端
-│   │   │   └ action/       # Redis 操作
-│   │   │       └ lock.go   # 分布式锁
-│   │   └ dbquery/          # GORM Gen 查询器（自动生成）
-│   │       ├── gen.go      # 生成器代码
-│   │       └ api_test.gen.go # 测试查询器
-│   ├── router/             # 路由层
-│   │   ├── router.go       # 路由注册
-│   │   └ heartbeat.go      # 健康检查路由
-│   ├── server/             # 服务器层
-│   │   ├── http.go         # HTTP 服务器创建
-│   │   └ server.go         # Wire ProviderSet
-│   └ service/              # 服务层
-│       ├── heartbeat.go    # 健康检查服务
-│       └ wire.go           # Wire ProviderSet
-├── pkg/                    # 通用封装层（可外部引用）
-│   ├── app/                # 应用管理
-│   │   ├── app.go          # 应用生命周期管理、上下文函数
-│   │   └ server.go         # 服务器接口定义、ServerAgreement
-│   ├── http/               # HTTP 封装
-│   │   ├── server.go       # Gin 服务器封装（UseMiddleware、CreateRequest）
-│   │   ├── context.go      # 请求上下文封装（对象池、sync.Once）
-│   │   ├── router.go       # 路由组封装
-│   │   ├── response.go     # 响应处理（SuccessResponse、ErrorResponse）
-│   │   ├── option.go       # 服务器选项（Timeout、Middleware、OpenBrowser）
-│   │   ├── pprof.go        # PProf 注册（非生产环境）
-│   │   └ middleware/       # 中间件管理
-│   │       ├── adapter.go  # 中间件管理器（Manager，依赖验证）
-│   │       ├── handler.go  # 中间件接口、函数式中间件、Priority 类型别名
-│   │       ├── request.go  # Request 中间件（Context 初始化、响应处理）
-│   │       ├── cors.go     # CORS 中间件
-│   │       └ recovery.go   # Recovery 中间件（异常恢复、告警通知）
-│   ├── db/                 # 数据库封装
-│   │   ├── gorm.go         # GORM 连接封装（重试机制、Ping）
-│   │   └ logger.go         # 数据库日志（TraceID 集成）
-│   ├── cache/              # 缓存封装
-│   │   └ redis.go          # Redis 连接封装（重试机制）
-│   ├── logger/             # 日志封装
-│   │   └ logger.go         # Zap 日志封装（App/SQL/Request 分类日志）
-│   ├── repositories/       # 数据仓库封装
-│   │   ├── repo.go         # 数据仓库接口（DataRepo）
-│   │   ├── db.go           # 数据库仓库接口（DbRepo）
-│   │   └ redis.go          # Redis 仓库接口（RedisRepo）
-│   ├── types/              # 类型定义
-│   │   ├── context.go      # 请求上下文类型、ContextKey 常量
-│   │   ├── trace.go        # 链路追踪类型（TraceIdName）
-│   │   └ middleware.go      # 中间件名称常量
-│   ├── proposal/            # 告警提案
-│   │   ├── alert.go        # 告警消息定义（AlertMessage）、NotifyHandler 类型
-│   └ notify/               # 告警通知
-│   │   └ recover/          # 异常恢复通知
-│   │       └ email/        # 邮件通知
-│   │           ├── alert.go # 告警处理（异步邮件发送）
-│   │           └ email_template.go # 邮件模板（HTML）
-├── static/                 # 静态文件
-│   └ db/                   # 数据库脚本
-│       └ ult.sql           # SQL 初始化脚本
-├── .env.example.yml        # 配置示例
-├── .gitignore              # Git 忽略文件
-├── Dockerfile              # Docker 构建文件
-├── docker-compose.yml      # Docker Compose 配置
-├── Makefile                # 构建命令
-├── go.mod                  # Go 模块定义
-└── go.sum                  # Go 模块依赖
-```
-
-</details>
-
----
 
 ## 快速开始
 
-### 1️⃣ 下载仓库
+### 环境要求
+
+- Go 1.23.0 或更高版本。
+- `make`、`sed`；使用下方密钥生成命令时需要 `openssl`。
+- 按需准备 MySQL、Redis；也可使用[最小配置](#最小配置)先启动健康检查服务。
+
+### 1. 初始化配置
+
+从仓库根目录执行：
 
 ```bash
-git clone git@github.com:raylin666/go-ult-framework.git
-cd go-ult-framework
-```
-
-### 2️⃣ 初始化项目
-
-```bash
+go mod download
 make init
 ```
 
-此命令会创建 `.env.yml` 配置文件（从 `.env.example.yml` 复制）。
+`make init` 在 `.env.yml` 不存在时复制 [.env.example.yml](.env.example.yml)，保留已有配置文件。
 
-### 3️⃣ 配置数据库和 Redis
+### 2. 配置运行参数
 
-编辑 `.env.yml` 文件，配置数据库和 Redis 连接：
+编辑 `.env.yml`，完成以下设置：
 
-```yaml
-db:
-  default:
-    driver: mysql
-    host: 127.0.0.1
-    port: 3306
-    username: root
-    password: password
-    db_name: ult_framework
-    charset: utf8mb4
-    prefix: api_
-    max_open_conn: 100
-    max_idle_conn: 10
-    max_life_time: 0
-    max_retries: 3
-    retry_delay: 2
-    parse_time: true
-    loc: Local
+| 配置项 | 设置方式 |
+| --- | --- |
+| MySQL、Redis | 填写实际连接参数；暂不使用时分别设置为 `db: {}`、`redis: {}`。启用某类连接时，须包含名为 `default` 的连接 |
+| JWT | 填写 `jwt.app`、`jwt.issuer` 和项目自己的密钥。入口始终初始化 JWT；HS256 密钥至少 32 字节 |
+| 邮件通知 | 按需配置；关闭时将 `notify.recover.email.host` 设为空字符串，或省略 `notify` 节点 |
 
-redis:
-  default:
-    network: tcp
-    addr: 127.0.0.1
-    port: 6379
-    password: ""
-    db: 0
-    min_idle_conns: 10
-    max_retries: 3
-    retry_delay: 2
+为 `jwt.secret` 生成新密钥：
+
+```bash
+openssl rand -hex 32
 ```
 
-> 💡 **提示**: 配置文件具体请参考 `.env.example.yml` 获取完整配置项。
+将生成结果填入配置文件。完整的无数据库、无 Redis、无邮件配置见[最小配置](#最小配置)。
 
-### 4️⃣ 下载依赖并生成 Wire 代码
+### 3. 启动服务
 
 ```bash
 make generate
-```
-
-此命令会：
-- 下载 Go 模块依赖
-- 安装 Wire 工具
-- 生成依赖注入代码
-
-### 5️⃣ 启动服务
-
-```bash
 make run
 ```
 
-访问健康检查接口验证服务是否正常：
+默认监听 `127.0.0.1:10001`。生成器依赖需完整记录在模块清单中；如遇 `missing go.sum entry`，按 [Wire 依赖注入](#wire-依赖注入)补齐固定版本工具依赖，再执行生成。
+
+### 4. 验证服务
 
 ```bash
-curl 127.0.0.1:10001/heartbeat/state
+curl -i http://127.0.0.1:10001/heartbeat/state
+curl -i http://127.0.0.1:10001/heartbeat/ready
 ```
 
-成功响应示例：
+| 接口 | 用途与响应 |
+| --- | --- |
+| `GET /heartbeat/state` | 查看整体及各已配置连接的健康状态；正常执行返回 HTTP 200，依赖异常体现在响应数据中 |
+| `GET /heartbeat/ready` | 就绪探针；所有已配置依赖正常时返回 200，否则返回统一的 503 错误响应 |
+
+每次探测中的数据库与 Redis 检查共用 2 秒期限。整体状态为 `healthy`、`degraded` 或 `unhealthy`。未配置数据连接时，返回 `healthy`，并省略空的 `components` 字段：
 
 ```json
 {
-    "trace_id": "b2401c9e-1f6f-4183-952a-b539ddabbb71",
-    "data": {
-        "status": "healthy",
-        "timestamp": "2024-01-01T10:00:00Z",
-        "components": {
-            "db_default": {"status": "healthy"},
-            "redis_default": {"status": "healthy"}
-        }
-    }
+  "trace_id": "b2401c9e-1f6f-4183-952a-b539ddabbb71",
+  "data": {
+    "status": "healthy",
+    "timestamp": "2026-11-08T16:00:00+08:00"
+  }
 }
 ```
 
-### 6️⃣ 编译执行文件
+### 编译与配置路径
 
 ```bash
 make build
+./bin/server -config .env.yml
 ```
 
-编译成功后，可通过以下命令运行：
+通过 `CONFIG` 或 `-config` 选择其他配置文件：
 
 ```bash
-./bin/server
+make run CONFIG=./configs/local.yml
+make gormgen CONFIG=./configs/local.yml
+go run ./cmd -config ./configs/local.yml
 ```
 
-### 🐳 Docker 部署
+`configs/local.yml` 需自行创建。配置文件路径按进程工作目录解析，日志目录和 JWT 相对密钥路径以配置文件所在目录为基准。
 
-支持使用 Docker 和 Docker Compose 部署：
+## 架构与目录
 
-```bash
-# 使用 Dockerfile 构建
-docker build -t go-ult-framework .
+业务按 `router → api → service → repo → Data` 组织，依赖通过构造函数传入。服务和仓库使用标准 `context.Context`，HTTP Context 留在处理层。
 
-# 使用 Docker Compose
-docker-compose up -d
-```
+装配定义见 [cmd/wire.go](cmd/wire.go)，生成链见 [cmd/wire_gen.go](cmd/wire_gen.go)。注入入口接收 `ctx`、`conf`、`tools`，返回应用、清理函数和错误。数据初始化失败会返回错误；后续 HTTP 构建失败时，Wire 生成代码会调用已经获得的清理函数。
 
-> ⚠️ **注意**: 当前 Dockerfile 基础镜像不可用，请建议根据实际需求更换镜像和修改 Dockerfile 配置。
+| 目录 | 职责与入口 |
+| --- | --- |
+| [cmd/](cmd/) | 启动、信号上下文、Wire 注入定义及生成结果 |
+| [config/](config/) | YAML 加载、配置结构；字段定义位于 `config/autoload/` |
+| [internal/server/](internal/server/) | 将应用配置转换为 HTTP 选项，接入 CORS、路由、pprof 和邮件通知 |
+| [internal/router/](internal/router/) | 组织路由分组，将路径绑定到 API 处理器 |
+| [internal/api/](internal/api/) | 绑定请求、调用服务、设置成功或错误响应 |
+| [internal/service/](internal/service/) | 应用逻辑；健康检查服务还负责通过数据仓库探测连接 |
+| [internal/data/](internal/data/) | 注入 `Data`，管理默认查询器、Redis 客户端和连接清理 |
+| [internal/data/repo/](internal/data/repo/) | 业务仓库接口与实现 |
+| [internal/data/model/](internal/data/model/) | 数据模型，`BaseModel` 包含 ID、创建时间、更新时间和软删除字段 |
+| [internal/data/dbquery/](internal/data/dbquery/) | GORM/gen 查询器生成结果 |
+| [internal/data/redis/action/](internal/data/redis/action/) | Redis 租约锁 |
+| [internal/app/](internal/app/) | `Tools`：日志、日期时间、环境和 JWT 工具 |
+| [pkg/http/](pkg/http/) | HTTP 构建、路由、Context、统一响应及中间件 |
+| [pkg/app/](pkg/app/) | 应用上下文和服务生命周期 |
+| [pkg/startup/](pkg/startup/) | 数据依赖初始化总预算、单次期限与重试控制 |
+| [pkg/repositories/](pkg/repositories/) | 按名称管理数据库和 Redis 连接 |
+| [pkg/db/](pkg/db/)、[pkg/cache/](pkg/cache/) | MySQL/GORM 与 Redis 客户端封装 |
+| [pkg/logger/](pkg/logger/)、[pkg/types/](pkg/types/) | 日志分类、TraceID 和请求上下文类型 |
+| [pkg/proposal/](pkg/proposal/)、[pkg/notify/](pkg/notify/) | 告警消息、通知回调和邮件实现 |
+| [errcode/](errcode/) | 业务错误、HTTP 状态码和中英文消息 |
+| [generate/gormgen/](generate/gormgen/) | 查询器生成入口与模型注册 |
 
----
+## 开发指南
 
-## Makefile 命令说明
+业务模块沿用现有分层和 Wire 工作流扩展。以下 Go 示例使用项目内包路径，涉及 `internal/` 的示例应放在本模块内使用。
 
-| 命令 | 说明 |
-| :---: | :--- |
-| `make init` | 初始化项目，创建配置文件 |
-| `make generate` | 下载依赖并生成 Wire 代码 |
-| `make wire` | 生成依赖注入文件 |
-| `make gormgen` | 生成 GORM Gen 查询器代码 |
-| `make run` | 启动开发服务器 |
-| `make build` | 编译生产执行文件（带 git 版本信息） |
-| `make help` | 显示帮助信息 |
+### HTTP 构建与路由
 
----
+应用通常通过 `internal/server.NewHTTPServer` 构建服务器。该层将 YAML 中的正文限制、HTTP 超时和 CORS 设置转换成底层选项，并注册应用路由、pprof 及可选邮件通知。
 
-## 开发规范
+底层 `pkg/http.NewServer` 的返回值为 `(*HTTPServer, error)`。它默认安装 Recovery 和 Request；CORS、路由及其他能力通过选项加入。直接调用底层构造函数时，需要自行传入相应选项，不能假定应用层的全部 YAML 配置会自动转换。
 
-### 调用链规范
-
-项目定义了严格的单向调用链：
-
-```
-api (处理层) → service (逻辑层) → data (数据层)
-```
-
-> ⚠️ **核心原则**
-> - `api` 层只做数据校验和响应，不处理业务逻辑
-> - `service` 层专注业务逻辑，不直接操作数据库
-> - `data` 层处理数据操作，不包含业务判断
-> - 逻辑代码只能下沉，禁止反向调用或互调
-
-### 层级职责规范
-
-| 层级 | 允许使用 | 禁止使用 |
-| :---: | :--- | :--- |
-| `api` | `service`、`logger`、`validator` | `config`、`dataRepo`、直接数据库操作 |
-| `service` | `data`、`logger`、其他 `service` | `config`、直接数据库操作 |
-| `data` | `db`、`redis`、`logger` | `service`、`api` |
-
-### 错误处理规范
-
-1. **统一错误类型**：所有业务错误必须返回 `BusinessError` 类型
-2. **错误码使用**：使用 `errcode.New(code)` 或 `errcode.Err*` 预创建变量，不要直接对 int 常量调用方法
-3. **错误响应**：只能在 `api` 层处理错误响应
-
-<details>
-<summary>📝 查看错误处理示例</summary>
+下面是独立构建 Handler 的示例；常规业务模块只需扩展现有 `internal/router/`：
 
 ```go
-// 正确示例 - 使用 errcode.New() 从错误码常量创建
-func (s *AccountService) GetByID(ctx context.Context, id int) (*model.Account, errcode.BusinessError) {
-    account, err := s.repo.GetByID(ctx, id)
-    if err != nil {
-        return nil, errcode.New(errcode.DataSelectError).WithDesc(err.Error())
-    }
-    if account == nil {
-        return nil, errcode.ErrDataNotExistError
-    }
-    return account, nil
-}
-
-// 也可使用预创建的 Err* 变量（推荐，更简洁）
-return nil, errcode.ErrDataSelectError.WithDesc(err.Error())
-```
-
-</details>
-
-### 数据响应规范
-
-| 方法 | 说明 | 使用场景 |
-| :---: | :--- | :--- |
-| `ctx.WithPayload(data)` | 设置成功响应数据 | 业务处理成功 |
-| `ctx.WithAbortError(err)` | 设置 BusinessError 并中断请求 | 业务处理失败 |
-
-> ⚠️ **注意事项**
-> - `WithAbortError` 接受 `errcode.BusinessError` 参数，保存错误、设置 HTTP 状态码并 `Abort`，响应头和 JSON 正文在请求收尾时统一提交
-> - `WithAbortError` 后必须 `return`，否则会继续执行
-> - `WithPayload` 一般放在最后，否则需 `return`
-
-### 请求收尾与 Context 生命周期
-
-- 默认请求链由 Request 登记响应回调，Recovery 在下游全部返回或捕获 panic 后执行收尾；每个请求的响应回调最多执行一次。
-- 尚未提交响应时发生 panic，返回 HTTP 500 和统一错误 JSON；业务已经写出正文、Flush 或提交响应头时，保留已有响应，记录异常，不再追加 JSON。已经发送的状态码无法撤回。
-- 直接使用 Gin 输出 JSON、文件、重定向或空正文状态码时，框架保留已提交的响应，仍执行请求日志及 Context 清理。
-- 默认 HTTP Context 在响应和日志处理结束后清除引用、重置并归还对象池；初始化失败也会归还已取得的对象。不要在请求结束后持有 HTTP Context 或交给后台 goroutine 使用。
-- 对象回收不会清空已经通过 `RequestContext()` 传给下游的 TraceID 数据，也不会改变原有上下文取消语义。
-
-自行替换内置 Recovery 时，需要接入收尾协议，确保正常和异常路径都执行响应回调：
-
-```go
-middleware.ManageRequestCompletion(ctx)
-defer middleware.CompleteRequest(ctx)
-defer func() {
-    if recovered := recover(); recovered != nil {
-        // 在这里设置业务错误、HTTP 状态码并 Abort，不提前提交响应头。
-        // 此 defer 后声明，因此先于 CompleteRequest 执行。
-    }
-}()
-ctx.Next()
-```
-
-`NewDefaultRequest` 和 `RequestConfig.Response` 的签名保留。单独使用 Request 的正常路径仍会执行响应回调；自定义异常恢复需要按上面的协议移交收尾，避免在异常转换前输出成功响应。
-
----
-
-## 模块开发指南
-
-### 创建新模块
-
-以创建 `account` 模块为例：
-
-<details>
-<summary>📝 步骤 1：创建数据模型</summary>
-
-在 `internal/data/model/` 目录创建模型文件：
-
-```go
-// Package model 提供数据模型定义。
-package model
-
-// Account 账户数据模型。
-type Account struct {
-    ID       int64  `gorm:"column:id;primaryKey" json:"id"`
-    UserName string `gorm:"column:username" json:"username"`
-    Password string `gorm:"column:password" json:"password"`
-    Avatar   string `gorm:"column:avatar" json:"avatar"`
-    Status   int8   `gorm:"column:status" json:"status"`
-
-    BaseModel
-}
-
-// TableName 设置表名。
-func (Account) TableName() string {
-    return "accounts"
-}
-```
-
-</details>
-
-<details>
-<summary>📝 步骤 2：生成查询器代码</summary>
-
-1. 在 `generate/gormgen/db/default.go` 中注册模型：
-
-```go
-// 添加新模型
-var accountModel = model.Account{}
-
-// 在 NewGeneratorDefaultDb 函数中添加
-g.ApplyBasic(
-    testModel,
-    accountModel,  // 新增
-)
-
-// 如果需要自定义查询方法，使用 ApplyInterface（可选）
-// 注意: 需先定义自定义接口，可参考 GORM Gen 文档
-// g.ApplyInterface(func(AccountMethod) {}, accountModel)
-```
-
-2. 执行生成命令：
-
-```bash
-make gormgen
-```
-
-</details>
-
-<details>
-<summary>📝 步骤 3：创建数据仓库</summary>
-
-在 `internal/data/repo/` 目录创建仓库实现：
-
-```go
-// Package repo 提供数据仓库实现。
-package repo
+package example
 
 import (
-    "context"
-    "ult/internal/data"
-    "ult/internal/data/dbquery"
-    "ult/internal/data/model"
+	"ult/config"
+	"ult/pkg/http"
+	"ult/pkg/http/middleware"
+	"ult/pkg/logger"
 )
 
-// AccountRepo 接口验证。
-var _ AccountRepo = (*accountRepo)(nil)
-
-// AccountRepo 账户数据仓库接口。
-type AccountRepo interface {
-    GetByID(ctx context.Context, id int) (*model.Account, error)
-    FindByUserName(ctx context.Context, username string) (*model.Account, error)
-    Create(ctx context.Context, account *model.Account) error
-}
-
-// accountRepo 账户数据仓库实现。
-type accountRepo struct {
-    data data.Data
-}
-
-// NewAccountRepo 创建账户数据仓库实例。
-func NewAccountRepo(data data.Data) AccountRepo {
-    return &accountRepo{data: data}
-}
-
-// GetByID 根据 ID 获取账户。
-func (r *accountRepo) GetByID(ctx context.Context, id int) (*model.Account, error) {
-    return r.query(ctx).Where(dbquery.Account.ID.Eq(id)).First()
-}
-
-// FindByUserName 根据用户名查找账户。
-func (r *accountRepo) FindByUserName(ctx context.Context, username string) (*model.Account, error) {
-    return r.query(ctx).FindByUserName(username)
-}
-
-// query 获取带上下文的查询器。
-func (r *accountRepo) query(ctx context.Context) dbquery.IAccountDo {
-    return dbquery.Use(r.data.WithContext(ctx).GormDB()).Account.WithContext(ctx)
+func NewExampleServer(conf *config.Config, log *logger.Logger) (*http.HTTPServer, error) {
+	cors, err := middleware.NewCORS(&middleware.CORSConfig{
+		Enabled:        true,
+		AllowedOrigins: []string{"https://app.example.com"},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return http.NewServer(conf, log, nil,
+		http.WithMiddleware(cors),
+		http.WithRoutes(func(root http.RouterGroup) {
+			group := root.Group("/api")
+			group.GET("/ping", func(ctx http.Context) {
+				ctx.WithPayload(map[string]string{"message": "pong"})
+			})
+		}),
+	)
 }
 ```
 
-</details>
+#### 构建约定
 
-<details>
-<summary>📝 步骤 4：创建服务层</summary>
+构建过程先创建并安装完整中间件链，再按 `WithRoutes` 顺序同步注册路由。无效中间件、空处理函数、冲突路由等构建错误返回给调用方；中间件配置或路由回调中的 panic 会转换为构建错误。构建期间不绑定监听端口。
 
-在 `internal/service/` 目录创建 `account.go`：
+构建完成后可直接将服务器作为 `net/http.Handler` 使用，或调用 `Start(ctx)` 启动监听。此时不能再通过保留的路由组追加路由，也不支持热更新处理链。
+
+`RouterGroup` 提供 `Group`、`Any`、`GET`、`POST`、`PUT`、`PATCH`、`DELETE`、`OPTIONS` 和 `HEAD`。处理函数类型为 `func(http.Context)`，而全局中间件使用 `gin.HandlerFunc`。
+
+#### 构建选项
+
+常用选项如下：
+
+| 选项 | 含义 |
+| --- | --- |
+| `WithRoutes(register)` | 在构建阶段注册路由，可多次追加 |
+| `WithMiddleware(items...)` | 追加全局中间件 |
+| `WithMaxBodyBytes(bytes)` | 设置正文上限，必须大于零 |
+| `WithReadHeaderTimeout(d)`、`WithReadTimeout(d)` | 请求头、整个请求读取期限 |
+| `WithWriteTimeout(d)`、`WithIdleTimeout(d)` | 响应写入、连接空闲期限 |
+| `WithTimeout(d)` | 单个 HTTP 服务优雅关闭期限，默认 5 秒 |
+| `WithAlertNotify(handler)` | 配置内置 Recovery 的通知出口 |
+| `WithPProf(environment)` | 按环境注册 `/debug/pprof`；`prod` 不注册 |
+| `EnableOpenBrowser(url)` | 构建完成时尝试打开指定 URL |
+
+构造函数第三个参数是 go-utils 的 `[]http.ServerOption`，用于底层网络、地址、显式 Endpoint 和 TLS 配置。当前 YAML 配置没有证书或 TLS 字段。
+
+`ServerAgreement()` 返回 `Network`、`Addr`、`Target`。自动 Endpoint 的查询会提前绑定监听器，以获得实际端口（包括配置端口为 0 的情况）；即使没有调用 `Start`，查询后也应调用 `Stop` 释放端口。`ServerType()` 不触发绑定。
+
+### 中间件
+
+应用内置链按以下顺序执行：
+
+`Recovery → CORS（启用时）→ Request → 业务中间件 → 路由处理函数`。
+
+自定义中间件按声明的优先级稳定排序。
+
+| 中间件 | 优先级 | 职责 |
+| --- | --- | --- |
+| Recovery | `PriorityHighest`，0 | 最外层恢复边界，统一收尾及通知 |
+| CORS | `PriorityHighest`，0 | 在正文读取前处理跨域，依靠先注册 Recovery 的稳定排序保持恢复边界 |
+| Request | `PriorityHigh`，1 | 创建 HTTP Context、限制并缓存正文、设置校验器、登记收尾回调 |
+| 业务中间件 | 通常为 `PriorityHigh`、`PriorityNormal` 或 `PriorityLow` | 在需要时读取已经初始化的业务 Context |
+
+合法来源的正文超限、读取超时等响应保留 CORS 头；默认预检请求直接返回 204，不进入 Request 和业务处理。禁用 CORS 或来源不在允许列表中时，不添加允许来源头。
+
+`middleware.Middleware` 必须实现 `Name()`、`Priority()`、`Handler()`、`Dependencies()`。`Enabled() bool` 是可选接口：实现时在注册阶段过滤禁用项，未实现时默认启用。
+
+依赖声明只校验名称是否存在，不负责拓扑排序，也不会覆盖优先级。使用业务 Context 的中间件，应在 Request 之后执行，并可声明对 `types.RequestMiddlewareName` 的依赖。内置名称 `recovery`、`request`、`cors` 不应被重复使用。
+
+#### 自定义中间件
+
+函数式中间件示例：
 
 ```go
-// Package service 提供业务逻辑层实现。
-package service
+package example
 
 import (
-    "context"
-    "ult/internal/data"
-    "ult/internal/data/repo"
-    "ult/errcode"
+	"ult/pkg/http"
+	"ult/pkg/http/middleware"
+	"ult/pkg/types"
+
+	utilsMiddleware "github.com/devpety/go-utils/v3/middleware"
+	"github.com/gin-gonic/gin"
 )
 
-// AccountService 账户服务。
-type AccountService struct {
-    dataRepo *data.DataRepo
-    repo     repo.AccountRepo
-    tools    *app.Tools
-}
-
-// NewAccountService 创建账户服务实例。
-func NewAccountService(dataRepo *data.DataRepo, repo repo.AccountRepo, tools *app.Tools) *AccountService {
-    return &AccountService{dataRepo: dataRepo, repo: repo, tools: tools}
-}
-
-// GetByID 根据 ID 获取账户。
-func (s *AccountService) GetByID(ctx context.Context, id int) (*AccountResponse, errcode.BusinessError) {
-    account, err := s.repo.GetByID(ctx, id)
-    if err != nil {
-        return nil, errcode.ErrDataSelectError.WithDesc(err.Error())
-    }
-    if account == nil {
-        return nil, errcode.ErrDataNotExistError
-    }
-    return &AccountResponse{
-        ID:       account.ID,
-        UserName: account.UserName,
-        Avatar:   account.Avatar,
-        Status:   account.Status,
-    }, nil
+func RequestMetadata() middleware.Middleware {
+	return middleware.NewMiddlewareFuncWithDependencies(
+		"request-metadata",
+		utilsMiddleware.PriorityNormal,
+		func(ctx *gin.Context) {
+			request := ctx.MustGet(types.CoreContextNameKey).(http.Context)
+			request.SetHeader("X-Request-Method", request.Method())
+			ctx.Next()
+		},
+		[]string{types.RequestMiddlewareName},
+	)
 }
 ```
 
-</details>
+将返回值传入 `http.WithMiddleware(RequestMetadata())`。需要独立管理时，`middleware.NewManager()` 提供 `Use`、`UseFunc`、`Build`、`List`、`Get`、`Has`、`Count`、`Remove`、`Clear`；`Use` 和 `Build` 返回的错误需要处理。`List` 返回切片副本，但中间件实例仍是原对象，运行期不要修改其配置。
 
-<details>
-<summary>📝 步骤 5：创建 API 处理器</summary>
+### 请求绑定与响应
 
-在 `internal/api/` 目录创建 `account.go`：
+#### 参数绑定与校验
+
+| 方法 | 行为 |
+| --- | --- |
+| `BindAndValidateJSON(&req)` | 绑定 JSON，再执行框架校验；失败自动设置错误并 Abort |
+| `BindAndValidateForm(&req)` | 绑定查询和表单，再执行框架校验；失败自动设置错误并 Abort |
+| `Validate(&req)` | 只校验现有结构体，不读取或覆盖请求数据；失败自动设置错误并 Abort |
+| `ShouldBindQuery`、`ShouldBindPostForm`、`ShouldBindForm`、`ShouldBindJSON`、`ShouldBindURI` | 返回 Gin 的绑定及其内置校验结果；不自动转换成框架错误或 Abort |
+
+组合绑定方法要求目标为非 nil 的结构体指针。普通解析错误返回 `ParamBindError`（400），参数校验错误返回 `ParamValidateError`（422）；错误的绑定目标、无效校验器等程序错误返回 `ServerError`（500）。
+
+`json`、`form`、`uri` 分别指定绑定字段；框架校验规则使用 `validate` 标签。`validator.tagname` 指定错误消息显示的字段标签，例如 `label`，不改变规则标签。Gin 绑定器还会执行 `binding` 标签校验。
+
+处理函数示例：
 
 ```go
-// Package api 提供 API 处理层实现。
-package api
+package example
 
 import (
-    "ult/internal/app"
-    "ult/internal/service"
-    "ult/pkg/http"
+	"context"
+	nethttp "net/http"
+	"ult/errcode"
+	"ult/pkg/http"
 )
 
-// AccountInterface 接口验证。
-var _ AccountInterface = (*AccountHandler)(nil)
-
-// AccountInterface 账户 API 接口。
-type AccountInterface interface {
-    GetByID() http.HandlerFunc
-    Create() http.HandlerFunc
+type CreateItemRequest struct {
+	Name string `json:"name" form:"name" label:"名称" validate:"required,min=1,max=30"`
 }
 
-// AccountHandler 账户 API 处理器。
-type AccountHandler struct {
-    service *service.AccountService
-    tools   *app.Tools
+type ItemService interface {
+	Create(ctx context.Context, name string) (any, error)
 }
 
-// NewAccountHandler 创建账户 API 处理器实例。
-func NewAccountHandler(service *service.AccountService, tools *app.Tools) AccountInterface {
-    return &AccountHandler{
-        service: service,
-        tools:   tools,
-    }
+type ItemHandler struct {
+	service ItemService
 }
 
-// GetByID 根据 ID 获取账户。
-func (h *AccountHandler) GetByID() http.HandlerFunc {
-    return func(ctx http.Context) {
-        var req = new(GetByIDRequest)
-        if err := ctx.Validator(req); err != nil {
-            return  // 校验失败，Validator 已自动设置错误响应
-        }
-
-        account, err := h.service.GetByID(ctx.RequestContext(), req.ID)
-        if err != nil {
-            ctx.WithAbortError(err)
-            return
-        }
-
-        ctx.WithPayload(account)
-    }
+func (h *ItemHandler) Create(ctx http.Context) {
+	var req CreateItemRequest
+	if err := ctx.BindAndValidateJSON(&req); err != nil {
+		return
+	}
+	result, err := h.service.Create(ctx.RequestContext(), req.Name)
+	if err != nil {
+		ctx.WithAbortError(errcode.New(errcode.ServerError).WithStackError(err))
+		return
+	}
+	ctx.WithStatus(nethttp.StatusCreated)
+	ctx.WithPayload(result)
 }
 ```
 
-</details>
+查询和 URI 参数可先用对应的 `ShouldBind*` 方法绑定，再调用 `Validate`。绑定失败时需要自行调用 `WithAbortError(errcode.New(errcode.ParamBindError).WithStackError(err))` 并返回。
 
-<details>
-<summary>📝 步骤 6：注册路由</summary>
+#### 统一响应
 
-在 `internal/router/router.go` 中添加：
+`WithPayload` 仅保存负载；`WithStatus` 设置尚未提交的成功状态码，允许 200–299，默认 200。`WithAbortError` 保存 `BusinessError`、设置状态并 Abort，但不会让当前 Go 函数立即返回，调用后仍需 `return`。
+
+成功响应包含 `trace_id` 和 `data`，错误响应包含 `trace_id`、`code`、`message`、`desc`：
+
+```json
+{
+  "trace_id": "b2401c9e-1f6f-4183-952a-b539ddabbb71",
+  "code": 200004,
+  "message": "参数校验错误",
+  "desc": "名称为必填字段"
+}
+```
+
+- 匹配的 HEAD 请求不写正文；204、205 等无正文成功状态也不写正文。
+- 未匹配路径使用 Gin 默认 404 正文，不会自动变成框架业务错误 JSON。
+- 通过 `GinContext()` 直接提交 JSON、文件、重定向或 Flush 时，框架不再追加统一正文。
+- 正常统一 JSON 序列化失败且响应尚未提交时，会改写为统一 500。
+
+#### 异常恢复与请求收尾
+
+Request 只登记回调，由最外层 Recovery 在下游返回或发生 panic 后执行；回调每个请求最多执行一次。
+
+- 响应尚未提交的普通 panic：记录异常，返回统一 500。
+- 响应已经提交的普通 panic：记录异常，再用 `http.ErrAbortHandler` 终止底层传输，避免将截断的 chunked 正文作为完整响应结束。
+- 收到标准库 `http.ErrAbortHandler`：原样透传，不改写为业务错误 JSON；已经创建的 HTTP Context 仍执行回收。
+- 统一响应回调中的 panic 也经过相同的恢复边界。
+
+自定义 Recovery 时需要在正常和异常路径调用 `middleware.CompleteRequest(ctx)`，同时保留传输中断语义。它只执行 Request 登记的回调，不替代完整的恢复中间件。接入点见 [completion.go](pkg/http/middleware/completion.go) 和 [recovery.go](pkg/http/middleware/recovery.go)。
+
+### 业务错误
+
+错误常量为 `int`，使用 `errcode.New(code)` 或已有 `Err*` 创建、派生错误。当前 HTTP 映射见 [errhttp.go](errcode/errhttp.go)：
+
+| 常量 | 业务码 | HTTP |
+| --- | --- | --- |
+| `ServerError` | 100001 | 500 |
+| `ServiceUnavailableError` | 100002 | 503 |
+| `AuthorizationError` | 200001 | 401 |
+| `ParamBindError` | 200002 | 400 |
+| `ParamValidateError` | 200004 | 422 |
+| `RequestBodyTooLargeError` | 200014 | 413 |
+| `RequestTimeoutError` | 200015 | 408 |
+| 其他现有 `200xxx` 错误 | 见 [code.go](errcode/code.go) | 400 |
+
+`BusinessError` 实现 `error` 和 `Unwrap`，区分内部原因与对外描述：
+
+- `WithStackError(err)` 保存内部错误和堆栈，不会自动设置 `desc`；传入 nil 保留原有内部信息。
+- `WithDesc(text)` 设置响应中的公开描述，适合明确的业务提示。
+- `Alert()` 标记通知需求。普通业务错误不会自动获得该标记，普通 panic 会被标记。
+- 上述修饰方法都返回独立副本，必须使用返回值；不会修改共享的 `Err*`。
+- `errors.Is` / `errors.As` 可检查附加的内部原因；比较派生错误的业务类型时使用 `BusinessCode()`，不要依赖与原错误指针相等。
+- HTTP 响应只读取消息和公开描述；`Error()` 包含内部原因，供内部诊断使用。
+
+#### 注册业务错误
+
+注册应用错误的示例：
 
 ```go
-// httpRouter 结构体添加 Account 字段
-type httpRouter struct {
-    g      http.RouterGroup
-    handle struct {
-        Heartbeat api.HeartbeatInterface
-        Account   api.AccountInterface
-    }
-}
+package example
 
-// NewHTTPRouter 添加 Account 实例化
-func NewHTTPRouter(heartbeat api.HeartbeatInterface, account api.AccountInterface) HTTPRouter {
-    return func(hs *http.HTTPServer) {
-        var r = &httpRouter{
-            g: hs.CreateRouterGroup(),
-            handle: struct {
-                Heartbeat api.HeartbeatInterface
-                Account   api.AccountInterface
-            }{
-                Heartbeat: heartbeat,
-                Account:   account,
-            },
-        }
-
-        r.heartbeat(r.g.Group("/heartbeat"))
-        r.account(r.g.Group("/account"))
-    }
-}
-
-// 新增路由注册方法
-func (r *httpRouter) account(group http.RouterGroup) {
-    group.GET("/:id", r.handle.Account.GetByID())
-    group.POST("/", r.handle.Account.Create())
-}
-```
-
-</details>
-
-<details>
-<summary>📝 步骤 7：注册 Wire ProviderSet</summary>
-
-在对应的 `wire.go` 文件中添加 ProviderSet：
-
-```go
-// internal/api/wire.go
-var ProviderSet = wire.NewSet(NewAccountHandler)
-
-// internal/service/wire.go
-var ProviderSet = wire.NewSet(NewAccountService)
-
-// internal/data/repo/wire.go
-var ProviderSet = wire.NewSet(NewAccountRepo)
-```
-
-</details>
-
-<details>
-<summary>📝 步骤 8：重新生成 Wire 代码</summary>
-
-```bash
-make wire
-```
-
-</details>
-
----
-
-## 中间件管理
-
-### 框架内置中间件
-
-框架内置三个核心中间件，按优先级自动排序：
-
-| 中间件 | 名称 | 优先级 | 依赖 | 说明 |
-| :---: | :---: | :---: | :---: | :--- |
-| **Recovery** | `"recovery"` | PriorityHighest (0) | 无 | 异常恢复、告警通知 |
-| **Request** | `"request"` | PriorityHigh (1) | Recovery | Context 初始化、验证器设置、响应处理 |
-| **CORS** | `"cors"` | PriorityHigh (1) | 无 | 跨域处理 |
-
-### 中间件优先级
-
-框架使用 `go-utils/v2/middleware` 包的优先级定义：
-
-```go
-// 优先级值（来自 go-utils/v2/middleware）
-const (
-    PriorityHighest Priority = iota  // 最高优先级（异常恢复）
-    PriorityHigh                     // 高优先级（Request、CORS）
-    PriorityNormal                   // 正常优先级（日志、验证）
-    PriorityLow                      // 低优先级（权限检查、限流）
+import (
+	"net/http"
+	"ult/errcode"
 )
-```
 
-<details>
-<summary>🔧 查看 Recovery 中间件配置</summary>
+const ItemConflict = 200100
 
-捕获 panic 异常，记录堆栈日志，支持邮件告警通知：
-
-```go
-// 配置
-type RecoveryConfig struct {
-    Enabled     bool                    // 是否启用
-    AlertNotify proposal.NotifyHandler  // 告警通知处理器
-    Config      *config.Config          // 应用配置
-    PrintStack  bool                    // 是否打印堆栈
-}
-
-// 便捷构造
-recovery := middleware.NewDefaultRecovery(cfg, logger, alertNotify)
-```
-
-Recovery 中间件在捕获 panic 时：
-1. 记录 panic 信息和堆栈日志
-2. 创建 BusinessError（`errcode.New(errcode.ServerError).WithStackError(goerror.New("got panic"))`）
-3. 设置 HTTP 500 状态码并中止请求
-4. 如果配置了 AlertNotify，发送告警通知
-
-</details>
-
-<details>
-<summary>🔧 查看 Request 中间件配置</summary>
-
-Request 中间件是核心中间件，负责 Context 初始化和响应处理：
-
-```go
-// 配置
-type RequestConfig struct {
-    Enabled            bool               // 是否启用
-    Validator          validator.Validator // 数据验证器
-    ContextInitializer ContextInitializer // Context 初始化函数
-    Response           Response           // 响应处理函数
-}
-
-// 函数类型
-type ContextInitializer func(ctx *gin.Context) (interface{}, error)
-type Response func(reqTime time.Time, ctx *gin.Context)
-
-// 便捷构造
-request := middleware.NewDefaultRequest(validatorInst, contextInitializer, responseHandler)
-```
-
-Request 中间件功能：
-1. **404 拦截**: 检查 `ctx.Writer.Status() == 404`，跳过不匹配的路由
-2. **Context 初始化**: 通过 `ContextInitializer` 创建 Context（使用对象池复用）
-3. **验证器设置**: 将 Validator 存入 gin.Context，供 `ctx.Validator()` 使用
-4. **响应处理**: 登记 Response 回调，由外层 Recovery 在异常处理后统一执行；单独使用时保留正常路径的延迟回调
-5. **依赖 Recovery**: 确保 Recovery 能捕获 Request 中的 panic
-
-服务器自动创建 Request 中间件（`srv.CreateRequest()`），无需手动注册。
-
-</details>
-
-<details>
-<summary>🔧 查看 CORS 中间件配置</summary>
-
-```go
-// 配置
-type CORSConfig struct {
-    Enabled            bool
-    AllowedOrigins     []string
-    AllowedMethods     []string
-    AllowedHeaders     []string
-    AllowCredentials   bool
-    OptionsPassthrough bool
-}
-
-// 便捷构造
-corsConfig := middleware.DefaultCORSConfig()
-```
-
-</details>
-
-### 中间件依赖管理
-
-框架支持中间件依赖管理，自动验证依赖关系：
-
-> ✅ **关键特性**
-> - 自动验证中间件依赖是否满足（**不满足时 panic**，确保编译期发现错误）
-> - 按优先级和依赖关系自动排序
-> - 避免运行时错误，提高系统稳定性
-
-<details>
-<summary>📝 查看中间件依赖管理示例</summary>
-
-```go
-// Middleware 接口
-type Middleware interface {
-    utilsMiddleware.Middleware      // 继承基础接口（Name、Priority、Enabled）
-    Handler() utilsMiddleware.Handler // 返回中间件处理函数
-    Dependencies() []string          // 返回依赖的中间件名称列表
-}
-
-// 示例：Request 中间件依赖 Recovery
-func (r *Request) Dependencies() []string {
-    return []string{types.RecoveryMiddlewareName} // 依赖 Recovery 中间件
+func RegisterBusinessErrors() {
+	errcode.RegisterHTTPCodes(map[int]int{
+		ItemConflict: http.StatusConflict,
+	})
+	errcode.RegisterTexts(errcode.ZhCN, map[int]string{
+		ItemConflict: "项目已存在",
+	})
 }
 ```
 
-</details>
+在创建对应错误和开始处理请求前完成注册，再使用 `errcode.New(ItemConflict)`。如需新增包级预创建变量，可沿用现有错误码文件和 `vars.go` 的方式。
 
-### Middleware Manager
+`NewRegistry` 设置进程级语言，支持 `zh-cn`、`en-us`，不按请求切换。注册表错误的消息在读取时按当前语言解析；`NewError` 的显式消息保持固定。HTTP 状态码在错误创建时确定。
 
-中间件管理器负责注册、排序和构建中间件链：
+### 请求上下文与链路标识
 
-<details>
-<summary>📝 查看 Middleware Manager 使用示例</summary>
+API 调用下游时传递 `ctx.RequestContext()`，服务、仓库及日志继续使用这个标准上下文。
 
-```go
-manager := middleware.NewManager()
-manager.Use(recoveryMiddleware)        // 注册 Recovery 中间件
-manager.Use(corsMiddleware)            // 注册 CORS 中间件
-manager.UseFunc("auth", PriorityLow, authHandler) // 注册函数式中间件
+HTTP Context 从已有缓存或请求头 `x-md-trace-id` 读取 ID，缺少时生成 UUID。`TraceID()` 和 `RequestContext()` 用 `sync.Once` 缓存初始化结果。Gin Context、响应写入器和 HTTP Context 按请求内串行访问。
 
-handlers := manager.Build() // 验证依赖 + 构建中间件链
-```
+HTTP Context 仅在当前请求内使用，收尾时清除引用并归还对象池。后台任务应自行管理上下文；下游已取得的标准请求上下文独立保存 TraceID，并遵守请求取消语义。
 
-</details>
+| 访问方式 | 语义 |
+| --- | --- |
+| `Header()` | 原请求头引用，按只读方式使用 |
+| `CloneHeaders()` | 完整副本，修改副本不影响请求头 |
+| `RawData()` | 缓存正文的字节副本，修改副本不影响原始数据 |
+| `Request()`、`GinContext()`、`ResponseWriter()` | 底层对象，遵守各自的生命周期和并发约束 |
 
-### 创建自定义中间件
+日志按 `app`、`sql`、`request` 分类；应用通过 `tools.Logger().UseApp(ctx)` 记录，SQL 和请求日志使用同一 TraceID 提取入口。`types.TraceIDFromContext` 只读取结构化请求上下文，不读取同名字符串键，不生成新 ID；没有有效 ID 时日志字段为 `null`。
 
-<details>
-<summary>📝 查看自定义中间件示例</summary>
+非 HTTP 入口可以通过 `types.NewRequestContext` 或 `pkg/app.NewAppContextWithTraceId` 创建带 TraceID 的上下文。
 
-```go
-// 定义中间件结构体
-type AuthMiddleware struct {
-    config *AuthConfig
-}
+### 数据访问与生成
 
-// 实现 Middleware 接口
-func (m *AuthMiddleware) Name() string {
-    return "auth"
-}
+#### 默认连接和请求上下文
 
-func (m *AuthMiddleware) Priority() utilsMiddleware.Priority {
-    return utilsMiddleware.PriorityLow
-}
+`internal/data.Data` 的主要入口：
 
-func (m *AuthMiddleware) Enabled() bool {
-    return true
-}
+| 方法 | 返回内容 |
+| --- | --- |
+| `DB()` | 默认连接的 `*dbquery.Query` |
+| `GormDB()` | 默认连接的 `*gorm.DB` |
+| `Redis()` | 默认 Redis 客户端 |
+| `WithContext(ctx)` | 新的数据视图，将 GORM 和生成查询器绑定到调用上下文 |
+| `DataRepo()` | 数据仓库视图，包含数据库与 Redis 连接集合 |
 
-func (m *AuthMiddleware) Handler() utilsMiddleware.Handler {
-    return func(ctx *gin.Context) {
-        // 中间件逻辑
-        token := ctx.GetHeader("Authorization")
-        if token == "" {
-            ctx.AbortWithStatusJSON(401, gin.H{"error": "unauthorized"})
-            return
-        }
-        ctx.Next()
-    }
-}
+未配置相应连接时，默认 DB / Redis 入口可能为 nil，业务模块应明确其依赖。Redis 命令还需显式传入 `ctx`，`WithContext` 不会把共享 Redis 客户端永久绑定到某个请求。
 
-func (m *AuthMiddleware) Dependencies() []string {
-    return []string{} // 无依赖
-}
-
-// 注册中间件
-srv.UseMiddleware(&AuthMiddleware{config: authConfig})
-```
-
-</details>
-
-### 使用函数式中间件
-
-<details>
-<summary>📝 查看函数式中间件示例</summary>
+查询器从注入的数据实例获取，字段与执行器使用同一个实例：
 
 ```go
-// 无依赖的函数式中间件
-srv.UseMiddlewareFunc("auth", utilsMiddleware.PriorityLow, func(ctx *gin.Context) {
-    token := ctx.GetHeader("Authorization")
-    if token == "" {
-        ctx.AbortWithStatusJSON(401, gin.H{"error": "unauthorized"})
-        return
-    }
-    ctx.Next()
-})
+package example
 
-// 带依赖的函数式中间件
-middleware.NewMiddlewareFuncWithDependencies(
-    "auth",
-    utilsMiddleware.PriorityLow,
-    authHandler,
-    []string{types.RecoveryMiddlewareName}, // 依赖 Recovery
+import (
+	"context"
+	"errors"
+	"ult/internal/data"
+	"ult/internal/data/model"
 )
+
+func FindTest(ctx context.Context, source data.Data, id int) (*model.Test, error) {
+	query := source.WithContext(ctx).DB()
+	if query == nil {
+		return nil, errors.New("未配置默认数据库")
+	}
+	return query.Test.WithContext(ctx).Where(query.Test.ID.Eq(id)).First()
+}
 ```
 
-</details>
+现有实现见 [internal/data/repo/test.go](internal/data/repo/test.go)。框架不依赖 `dbquery.Q` / `dbquery.Test` 全局默认查询器。
 
----
+额外连接通过 `source.DataRepo().DbRepo.DB("名称")`、`source.DataRepo().RedisRepo.Redis("名称")` 取得，再由 `Get()` 访问客户端。名称不存在时返回 nil。仓库的 `All()` 返回映射副本，连接实例仍共享；连接统一由数据层清理，业务代码不要自行关闭共享连接。
 
-## 错误码管理
+#### 模型与查询器生成
 
-### 错误码分类
+新增模型后，在 [generate/gormgen/db/default.go](generate/gormgen/db/default.go) 的 `g.ApplyBasic(...)` 中注册，再执行 `make gormgen`。模型可以嵌入 `BaseModel`，不要再重复定义同名 ID 字段。
 
-| 范围 | 分类 | 说明 |
-| :---: | :---: | :--- |
-| **100xxx** | 服务端错误 | 内部服务器错误 |
-| **200xxx** | 客户端错误 | 参数错误、认证错误、业务错误、数据操作错误等 |
+生成器使用 Go 模型生成查询器，仍会连接默认数据库完成客户端初始化；它不负责建库、建表或迁移。[static/db/ult.sql](static/db/ult.sql) 当前为空，需要自行准备表结构。生成文件通过生成器更新，不手工维护。
 
-### 错误码定义
+示例 `TestRepo.Update` 使用生成器的 `Save`，执行 `INSERT ... ON DUPLICATE KEY UPDATE`，具有插入或更新语义。纯更新场景应在业务仓库中明确使用相应的更新操作。
 
-在 `errcode/code.go` 中定义的全部错误码：
+#### 事务
 
-| 常量名 | 错误码 | 分类 | 中文消息 |
-| :---: | :---: | :---: | :--- |
-| `ServerError` | 100001 | 服务端 | 内部服务器错误 |
-| `AuthorizationError` | 200001 | 客户端 | 签名信息错误 |
-| `ParamBindError` | 200002 | 客户端 | 参数信息错误 |
-| `RequestError` | 200003 | 客户端 | 请求错误 |
-| `ParamValidateError` | 200004 | 客户端 | 参数校验错误 |
-| `UnknownError` | 200005 | 客户端 | 未知错误 |
-| `DataNotExistError` | 200006 | 客户端 | 数据不存在 |
-| `DataExistError` | 200007 | 客户端 | 数据已存在 |
-| `RequestNotFoundError` | 200008 | 客户端 | 不存在的请求 |
-| `DataDeleteError` | 200009 | 客户端 | 数据删除错误 |
-| `ResourceNotExistError` | 200010 | 客户端 | 资源不存在 |
-| `DataSelectError` | 200011 | 客户端 | 数据查询失败 |
-| `DataCreateError` | 200012 | 客户端 | 数据创建失败 |
-| `DataUpdateError` | 200013 | 客户端 | 数据更新失败 |
-
-### 预创建错误变量
-
-`errcode/vars.go` 为每个错误码预创建了 `BusinessError` 实例，推荐直接使用：
-
-<details>
-<summary>📝 查看预创建错误变量</summary>
+生成的 `Query` 提供 `Transaction`、`Begin`、`Commit`、`Rollback` 等原语。事务内应使用回调中的 `tx`，其他仓库重新获取根 Data 连接不会自动参与该事务：
 
 ```go
-var (
-    ErrServerError          = New(ServerError)
-    ErrAuthorizationError   = New(AuthorizationError)
-    ErrParamBindError       = New(ParamBindError)
-    ErrRequestError         = New(RequestError)
-    ErrParamValidateError   = New(ParamValidateError)
-    ErrUnknownError         = New(UnknownError)
-    ErrDataNotExistError    = New(DataNotExistError)
-    ErrDataExistError       = New(DataExistError)
-    ErrRequestNotFoundError = New(RequestNotFoundError)
-    ErrDataDeleteError      = New(DataDeleteError)
-    ErrDataSelectError      = New(DataSelectError)
-    ErrDataCreateError      = New(DataCreateError)
-    ErrDataUpdateError      = New(DataUpdateError)
+package example
+
+import (
+	"context"
+	"errors"
+	"ult/internal/data"
+	"ult/internal/data/dbquery"
+	"ult/internal/data/model"
 )
-```
 
-</details>
-
-### 使用错误码
-
-<details>
-<summary>📝 查看错误码使用示例</summary>
-
-```go
-// 返回预定义错误（使用 Err* 变量，推荐）
-return errcode.ErrDataNotExistError
-
-// 使用 errcode.New() 从错误码常量创建
-return errcode.New(errcode.DataNotExistError)
-
-// 添加错误描述
-return errcode.ErrDataSelectError.WithDesc("数据库查询失败")
-
-// 添加堆栈信息（注意：同时会设置描述为 err.Error()）
-return errcode.ErrServerError.WithStackError(err)
-
-// 设置告警标记
-return errcode.ErrServerError.Alert()
-```
-
-</details>
-
-### HTTP 状态码映射
-
-| 错误码 | HTTP 状态码 |
-| :---: | :---: |
-| ServerError (100001) | 500 |
-| AuthorizationError (200001) | 401 |
-| ParamValidateError (200004) | 422 |
-| 其他 200xxx 错误码 | 400 |
-
----
-
-## 数据校验
-
-### 校验器使用
-
-```go
-// 定义请求结构体
-type CreateAccountRequest struct {
-    UserName string `form:"username" label:"用户名" validate:"required,min=3,max=20"`
-    Password string `form:"password" label:"密码" validate:"required,min=6,max=32"`
-    Avatar   string `form:"avatar" label:"头像" validate:"omitempty,url"`
-}
-
-// 在 API 层调用校验器
-// Validator() 返回 error 类型：nil 表示成功，非 nil 表示失败
-var req = new(CreateAccountRequest)
-if err := ctx.Validator(req); err != nil {
-    return  // 校验失败，Validator 已自动设置错误响应并 Abort
+func CreateTwo(ctx context.Context, source data.Data, first, second *model.Test) error {
+	query := source.WithContext(ctx).DB()
+	if query == nil {
+		return errors.New("未配置默认数据库")
+	}
+	return query.Transaction(func(tx *dbquery.Query) error {
+		if err := tx.Test.WithContext(ctx).Create(first); err != nil {
+			return err
+		}
+		return tx.Test.WithContext(ctx).Create(second)
+	})
 }
 ```
 
-> ⚠️ **注意**: `ctx.Validator()` 返回 `error` 类型（不是 bool），使用 `err != nil` 检查。校验失败时，Validator 会自动调用 `ctx.WithAbortError()` 设置错误响应。
+#### Redis 租约锁
 
-### Validator 方法行为
+[internal/data/redis/action/lock.go](internal/data/redis/action/lock.go) 提供 `NewLock(client, key, duration)`、`Lock(ctx)`、`TryLock(ctx, retryInterval, timeout)`、`Unlock(ctx)`、`IsLocked(ctx)`、`IsHeldByMe(ctx)`。
 
-`Validator()` 方法执行两步操作：
-1. **绑定参数**: 调用 `ShouldBindForm(req)` 将表单数据绑定到请求结构体
-2. **校验数据**: 使用配置的 Validator 实例调用 `Validate(req)` 进行结构化校验
+- 租约至少 1 毫秒，按毫秒向下取整，不自动续期；临界区必须在租约内完成。
+- 获取返回 `false, nil` 表示被其他令牌占用；连接故障、取消和租约失效返回错误。
+- 同一实例不支持并发变更所有权，也不能在未释放前再次获取。
+- 解锁使用独立 2 秒期限，不继承调用方取消，但保留上下文值；仅删除自身令牌对应的键。
+- `IsLocked`、`IsHeldByMe` 是即时快照，不能替代原子获取，也不保证后续操作期间租约仍有效。
 
-绑定失败返回 `ParamBindError` 类型错误，校验失败返回 `ParamValidateError` 类型错误，均会自动设置到 Context 中。
+### JWT 工具
 
-### 常用校验规则
+应用通过 `internal/app.NewJWT(conf)` 构造 `auth.JWT`，并由 `Tools.JWT()` 提供。配置字段为 `app`、`issuer`、`algorithm`、`secret`、`private_key_file`、`public_key_file`、`audience`。
 
-| 规则 | 说明 | 示例 |
-| :---: | :--- | :--- |
-| `required` | 必填字段 | `validate:"required"` |
-| `min` | 最小长度/值 | `validate:"min=3"` |
-| `max` | 最大长度/值 | `validate:"max=20"` |
-| `email` | 邮箱格式 | `validate:"email"` |
-| `url` | URL 格式 | `validate:"url"` |
-| `numeric` | 数值类型 | `validate:"numeric"` |
-| `omitempty` | 可选字段 | `validate:"omitempty,email"` |
+| 算法 | 配置要求 |
+| --- | --- |
+| HS256 / HS384 / HS512 | 只配置 `secret`，最低长度分别为 32 / 48 / 64 字节 |
+| RS256/384/512、PS256/384/512 | 配置 RSA 私钥或公钥文件，密钥至少 2048 位 |
+| ES256 / ES384 / ES512 | 配置匹配 P-256 / P-384 / P-521 的 EC 密钥文件 |
+| EdDSA | 配置 Ed25519 密钥文件 |
 
-> 💡 **提示**: 更多校验规则请参考：[validator 文档](https://github.com/go-playground/validator)
+算法留空使用 HS256。非对称算法只能选择一个私钥或公钥文件，并清空 `secret`；只提供公钥的实例可以验签，不能签发。每个文件只接受一个未加密 PEM 块：私钥支持 PKCS#8、RSA PKCS#1、EC SEC1，公钥支持 PKIX 或 RSA PKCS#1。相对路径以配置目录为基准。
 
----
-
-## 性能优化
-
-### Header() 方法性能优化
-
-Header() 方法返回请求头的只读引用，性能最优：
-
-<details>
-<summary>📊 查看性能对比</summary>
+使用示例：
 
 ```go
-// Header() 返回只读引用（性能最优）
-headers := ctx.Header()  // 无内存分配，直接返回引用
+package example
 
-// CloneHeaders() 返回完整副本（需要修改时使用）
-headers := ctx.CloneHeaders()  // 创建完整副本，可以安全修改
+import (
+	"time"
+	"ult/internal/app"
+)
 
-// GetHeader() 获取单个请求头（性能最优）
-authHeader := ctx.GetHeader("Authorization")  // 单次查找
-```
+func IssueToken(tools *app.Tools, id string) (string, error) {
+	return tools.JWT().GenerateToken(id, time.Hour)
+}
 
-**性能对比**：
-- Header()：0.22 ns/op，0 次内存分配，性能提升 **99.96%**
-- CloneHeaders()：543.6 ns/op，22 次内存分配（按需使用）
-- GetHeader()：2.6 ns/op，0 次内存分配（单次查找）
-
-</details>
-
-### RequestContext() 方法性能优化
-
-RequestContext() 方法使用 sync.Once 缓存，多次调用只创建一次：
-
-<details>
-<summary>📊 查看性能对比</summary>
-
-```go
-// 首次调用：创建并缓存 RequestContext
-reqCtx1 := ctx.RequestContext()  // 230.5 ns/op，6 次内存分配
-
-// 后续调用：直接返回缓存（性能提升 592倍）
-reqCtx2 := ctx.RequestContext()  // 0.39 ns/op，0 次内存分配
-```
-
-**性能提升**：
-- 首次调用：230.5 ns/op，6 次内存分配
-- 后续调用：0.39 ns/op，0 次内存分配，性能提升 **99.83%**
-
-</details>
-
-### RawData() 方法内存安全
-
-RawData() 方法返回副本，避免内存泄漏和数据污染：
-
-<details>
-<summary>📊 查看内存安全特性</summary>
-
-```go
-// 返回副本，可以安全修改
-rawData := ctx.RawData()  // 返回副本，不影响原始数据
-rawData[0] = 'X'  // 修改副本，不影响原始请求体
-```
-
-**内存安全**：
-- ✅ 返回副本，避免外部修改影响原始数据
-- ✅ 防止 context 对象被放回池中后的数据污染
-- ✅ 提高内存安全性
-
-</details>
-
----
-
-## 并发安全性
-
-### TraceID() 方法并发安全
-
-TraceID() 方法使用 sync.Once 确保只生成一次：
-
-<details>
-<summary>📊 查看并发安全实现</summary>
-
-```go
-// 使用 sync.Once 确保只生成一次 TraceID
-func (c *context) TraceID() string {
-    c.traceIDOnce.Do(func() {
-        // 先检查上下文中是否已存在
-        if traceId, ok := c.ctx.Get(pkgtypes.TraceIdName); ok {
-            if tid, ok := traceId.(string); ok && len(tid) > 0 {
-                return
-            }
-        }
-
-        // 检查请求头
-        var headerTraceId = c.GetHeader(pkgtypes.TraceIdName)
-        if len(headerTraceId) <= 0 {
-            headerTraceId = uuid.New().String()
-        }
-
-        c.ctx.Set(pkgtypes.TraceIdName, headerTraceId)
-    })
-
-    // 从上下文中获取 TraceID
-    traceId, ok := c.ctx.Get(pkgtypes.TraceIdName)
-    // ...
+func ParseTokenID(tools *app.Tools, token string) (string, error) {
+	claims, err := tools.JWT().ParseToken(token)
+	if err != nil {
+		return "", err
+	}
+	return claims.ID, nil
 }
 ```
 
-**并发安全**：
-- ✅ 使用 sync.Once 确保只生成一次 UUID
-- ✅ 100 个 goroutine 同时调用 TraceID()，都获取到相同的值
-- ✅ 避免竞态条件，提高并发安全性
+签发时 `id` 写入 `jti`，`sub` 为配置的应用名；验签约束固定算法、签名、`iss`、`sub`、过期时间和生效时间。配置 `audience` 时要求任一接收方匹配；不配置时不约束接收方，签发默认 audience 为 `id`。令牌过期时刻必须位于未来。
 
-</details>
+业务鉴权中间件负责读取 Authorization 请求头、调用解析工具，并执行权限判断。
 
-### RequestContext() 方法并发安全
+### 新增业务模块
 
-RequestContext() 方法使用 sync.Once 缓存：
+按以下步骤接入业务模块；不涉及持久化的模块可从服务层开始：
 
-<details>
-<summary>📊 查看并发安全实现</summary>
+1. 在 `internal/data/model/` 定义模型，加入 GORM 生成器模型列表，执行 `make gormgen` 更新查询器。
+2. 在 `internal/data/repo/` 定义仓库接口及实现，通过构造函数注入 `data.Data`，按请求传递标准上下文。
+3. 在 `internal/service/` 实现业务逻辑，通过构造函数注入所需仓库和工具。
+4. 在 `internal/api/` 绑定、校验请求，调用服务，设置响应并及时返回。
+5. 将构造函数加入对应 `ProviderSet`；在 `internal/router/` 注册路径，需要时扩展路由构造函数的依赖。
+6. 执行 `make wire`，检查生成的装配和清理链，再编译项目。
 
-```go
-// 使用 sync.Once 缓存 RequestContext
-func (c *context) RequestContext() stdCtx.Context {
-    c.reqContextOnce.Do(func() {
-        reqContext := new(pkgtypes.RequestContext)
-        reqContext.WithTraceID(c.TraceID())
-        c.reqContext = pkgtypes.NewRequestContext(c.ctx.Request.Context(), reqContext)
-    })
-    return c.reqContext
-}
-```
+已有模块参考：[仓库](internal/data/repo/test.go)、[服务](internal/service/heartbeat.go)、[API](internal/api/heartbeat.go)、[路由](internal/router/router.go)。新增依赖继续通过现有构造函数和 `ProviderSet` 装配。
 
-**并发安全**：
-- ✅ 使用 sync.Once 确保只创建一次 RequestContext
-- ✅ 多次调用性能提升 592倍
-- ✅ 减少 GC 压力，提高系统性能
+## 配置参考
 
-</details>
+配置模板见 [.env.example.yml](.env.example.yml)，字段定义见 [config/autoload/](config/autoload/)。
 
-### Context 对象池
+加载器读取单个显式指定的 YAML 文件，严格校验未知字段，并拒绝空文件和多个 YAML 文档。配置在启动时加载，文件内容按字面值解析；环境变量合并、`${...}` 替换及热更新需由应用另行处理。
 
-Context 使用 sync.Pool 复用，减少内存分配：
+### 最小配置
 
-<details>
-<summary>📊 查看对象池实现</summary>
-
-```go
-// contextPool 是用于复用上下文对象的 sync.Pool
-var contextPool = &sync.Pool{
-    New: func() interface{} {
-        return new(context)
-    },
-}
-
-// newContext 从池中创建或获取上下文对象
-func newContext(ctx *gin.Context) (Context, error) {
-    context := contextPool.Get().(*context)
-    context.ctx = ctx
-    if err := context.init(); err != nil {
-        return nil, err
-    }
-    return context, nil
-}
-
-// recoveryContext 使用后将上下文归还到池中
-func recoveryContext(ctx Context) {
-    c, ok := ctx.(*context)
-    if !ok {
-        return
-    }
-    c.reset()  // 清空所有字段，包括重置 sync.Once
-    contextPool.Put(c)
-}
-```
-
-**对象池优势**：
-- ✅ 减少内存分配，提高性能
-- ✅ 减少 GC 压力，提高系统稳定性
-- ✅ 对象复用，降低资源消耗
-- ✅ reset() 重置 sync.Once 确保池中对象可安全复用
-
-</details>
-
----
-
-## 配置管理
-
-### 配置文件结构
-
-配置文件 `.env.yml` 采用 YAML 格式（注意：字段名与代码中的 YAML struct tag 对应）：
-
-<details>
-<summary>📝 查看完整配置示例</summary>
+下面是不使用数据库、Redis 和邮件的完整配置示例。将 `jwt.secret` 替换为生成的密钥后，可保存为本地配置并启动心跳服务：
 
 ```yaml
-environment: dev  # 运行环境: dev/prod
-
+environment: dev
 app:
-  id: "ult-framework"
-  name: "ULT Web API Framework"
-  version: "1.0.0"
-
+  id: ult.service.001
+  name: ult
+  version: 1.0.0
+  startup_timeout_ms: 30000
 datetime:
   location: Asia/Shanghai
-  cst_layout: 2006-01-02 15:04:05
-
+  cst_layout: "2006-01-02 15:04:05"
 language:
-  local: zh-cn  # 语言设置: zh-cn 或 en-us
-
+  local: zh-cn
 validator:
-  locale: zh     # 校验器语言
-  tagname: label # 字段标签名
-
-logger:           # 注意: 配置键是 "logger"，不是 "log"
-  max_size: 128      # 日志文件最大大小(MB)
-  max_backups: 5     # 最大备份文件数
-  max_age: 7         # 最大保留天数
-  local_time: true   # 使用本地时间
-  compress: true     # 是否压缩
-
+  locale: zh
+  tagname: label
+logger:
+  max_size: 128
+  max_backups: 5
+  max_age: 7
+  local_time: true
+  compress: true
+db: {}
+redis: {}
+jwt:
+  app: ult.service
+  issuer: ult.local
+  algorithm: HS256
+  secret: CHANGE_ME
+  audience: []
 server:
   http:
-    network: "tcp"
-    host: "127.0.0.1"
+    network: tcp
+    host: 127.0.0.1
     port: 10001
     cors:
-      domains: "all"  # CORS 允许域名: all 或逗号分隔列表
-
-db:
-  default:
-    driver: "mysql"
-    host: "127.0.0.1"
-    port: 3306
-    username: "root"
-    password: "password"
-    db_name: "ult_framework"   # 注意: 字段名是 "db_name"，不是 "database"
-    charset: "utf8mb4"
-    prefix: "api_"
-    max_open_conn: 100
-    max_idle_conn: 10
-    max_life_time: 0           # 最大连接生命周期(秒)
-    max_retries: 3
-    retry_delay: 2
-    parse_time: "true"         # 注意: 类型为 string，值为 "true"
-    loc: "Local"
-
-redis:
-  default:
-    network: "tcp"
-    addr: "127.0.0.1"
-    port: 6379
-    username: ""               # Redis 6.0+ ACL 用户名
-    password: ""
-    db: 0
-    min_idle_conns: 10
-    max_retries: 3
-    retry_delay: 2
-    min_retry_backoff: 0       # 最小重试退避时间(毫秒)
-    max_retry_backoff: 0       # 最大重试退避时间(毫秒)
-    dial_timeout: 0            # 连接超时(毫秒)
-    read_timeout: 0            # 读超时(毫秒)
-    write_timeout: 0           # 写超时(毫秒)
-    pool_size: 0               # 连接池大小
-    max_conn_age: 0            # 最大连接存活时间(毫秒)
-    pool_timeout: 0            # 连接池等待超时(毫秒)
-    idle_timeout: 0            # 空闲连接超时(毫秒)
-
-jwt:
-  app: "ult.service"
-  key: "1203822711"
-  secret: "Fu83AfHC839F0rTn22V23c"
-
-notify:
-  recover:
-    email:
-      host: "smtp.qq.com"
-      port: 465
-      user: "xxxxxx@qq.com"
-      pass: "123456"
-      to: "xxxxxx@qq.com"
+      enabled: false
 ```
 
-</details>
+`language.local` 使用 `zh-cn` / `en-us`；校验器的 `validator.locale` 使用 `zh` / `en`，两者不是同一套取值。默认入口的文件日志位于 `<配置目录>/runtime/logs/<app.name>.log`。
 
-### 多数据库/Redis 配置
+### HTTP 限制与 CORS
 
-支持配置多个数据库或 Redis 连接：
+以下字段配置为 0 时使用默认值：
 
-<details>
-<summary>📝 查看多连接配置示例</summary>
+| `server.http` 字段 | 单位 | 默认值 |
+| --- | --- | --- |
+| `max_body_bytes` | 字节 | 2097152（2 MiB） |
+| `read_header_timeout_ms` | 毫秒 | 5000 |
+| `read_timeout_ms` | 毫秒 | 15000，包含请求头和正文 |
+| `write_timeout_ms` | 毫秒 | 30000 |
+| `idle_timeout_ms` | 毫秒 | 60000 |
+
+上述字段不接受负值，读取请求头期限不能大于整个请求读取期限。HTTP 正文在进入业务处理前完整读取并缓存；超限返回 413，读取超时返回 408。I/O 读写超时不等同于给业务代码添加执行 Deadline，业务操作的期限仍通过标准上下文控制。
+
+CORS 配置片段，合并到 `server.http.cors`：
 
 ```yaml
-db:
-  default:     # 默认连接
-    driver: "mysql"
-    host: "127.0.0.1"
-    ...
-  readonly:    # 只读连接
-    driver: "mysql"
-    host: "127.0.0.1"
-    ...
-
-redis:
-  default:     # 默认连接
-    addr: "127.0.0.1"
-    ...
-  cache:       # 缓存连接
-    addr: "127.0.0.1"
-    ...
+enabled: true
+allowed_origins:
+  - https://app.example.com
+allowed_methods: [GET, POST, PUT, PATCH, DELETE, HEAD]
+allowed_headers: [Content-Type, Authorization, x-md-trace-id]
+allow_credentials: false
 ```
 
-通过 `DataRepo` 接口按名称访问不同连接：
+启用时必须有来源列表。来源为完整 HTTP/HTTPS Origin，不包含路径、查询、片段或通配子域；单独的 `*` 只在不携带凭证时允许。底层 `CORSConfig.OptionsPassthrough` 只通过 Go 配置提供，当前 YAML 未暴露该字段。
 
-```go
-// 获取指定名称的数据库连接
-dbConn := dataRepo.DB("default")
-dbConn := dataRepo.DB("readonly")
+### 数据连接初始化
 
-// 获取指定名称的 Redis 连接
-redisConn := dataRepo.Redis("default")
-redisConn := dataRepo.Redis("cache")
+所有已配置连接共享 `app.startup_timeout_ms` 初始化预算，0 使用 30000 毫秒。数据库和 Redis 按连接名排序、依次初始化，任一已配置连接失败都会使应用初始化失败，并关闭已经打开的连接。成功交付的连接不会继承已经结束的初始化上下文。
+
+| 配置 | 语义 | 0 的含义 |
+| --- | --- | --- |
+| `db.<name>.max_retries` | 数据库初始化最大尝试次数，包含首次尝试 | 3 次 |
+| `db.<name>.retry_delay` | 数据库初始化尝试间隔，秒 | 1 秒 |
+| `db.<name>.connect_timeout_ms` | 数据库单次初始化期限，毫秒 | 5000 毫秒 |
+| `redis.<name>.startup_max_attempts` | Redis 初始化最大尝试次数，包含首次尝试 | 3 次 |
+| `redis.<name>.startup_retry_delay` | Redis 初始化尝试间隔，秒 | 1 秒 |
+| `redis.<name>.connect_timeout_ms` | Redis 单次初始化期限，毫秒 | 5000 毫秒 |
+
+以上尝试仍受共享总预算和调用方取消约束。Redis 初始化重试与运行期命令重试分别配置。
+
+### MySQL
+
+数据库封装基于 MySQL / GORM。可以使用 `dsn`，或配置 `host`、`port`、`username`、`password`、`db_name`、`charset`、`parse_time`、`loc`；非空 DSN 优先决定连接参数，连接池和表名前缀独立配置。
+
+| 字段 | 语义 |
+| --- | --- |
+| `prefix` | GORM 表名前缀，命名策略使用单数表名 |
+| `max_open_conn` | 最大连接数；框架传入配置原值，0 表示不限 |
+| `max_idle_conn` | 最大空闲连接数；0 不保留空闲连接 |
+| `max_life_time` | 连接寿命，秒；0 不限制 |
+| `parse_time` | 字符串配置，例如 `"true"` |
+
+需要有限连接池时显式填写参数，模板中的值为 100 个最大连接、10 个空闲连接、1800 秒寿命。连接配置非空时必须有 `default`；额外连接由名称区分，不自动形成读写分离。
+
+### Redis
+
+当前使用单节点客户端；多个命名连接分别初始化，不自动组成集群或故障转移客户端。`network: tcp` 时由 `addr`、`port` 组成地址；`network: unix` 时直接使用 `addr` 路径。
+
+| 字段 | 单位及特殊值 |
+| --- | --- |
+| `max_retries` | 运行期命令最大重试次数；0 或 -1 禁用，正数用于可安全重放命令的连接 |
+| `dial_timeout`、`pool_timeout` | 毫秒；0 使用底层默认值 |
+| `read_timeout`、`write_timeout` | 毫秒；0 使用默认值，-1 仅禁用默认 socket 超时，仍考虑调用上下文 Deadline |
+| `min_retry_backoff`、`max_retry_backoff` | 毫秒；0 分别使用 8 / 512 毫秒，-1 禁用退避 |
+| `max_conn_age` | 秒；0 或 -1 不限制连接寿命 |
+| `idle_timeout` | 秒；0 使用 30 分钟，-1 禁用空闲过期检查 |
+| `pool_size`、`min_idle_conns`、`pool_fifo` | 连接池大小、最小空闲连接数、FIFO 策略 |
+
+运行期 socket 读写是否立即响应提前取消，受固定版本 go-redis 实现约束；传入上下文不等于可以强制中断任意阻塞操作。完整转换规则见 [pkg/cache/redis.go](pkg/cache/redis.go)。
+
+### 通知与 pprof
+
+`notify.recover.email.host` 非空时，应用层将邮件处理器接入内置 Recovery。还需配置端口、用户、密码和收件人；`to` 使用逗号分隔。通知消息类型为 `proposal.AlertMessage`，自定义出口通过 `WithAlertNotify(proposal.NotifyHandler)` 配置。
+
+应用层调用 `WithPProf(config.Environment)`，非 `prod` 环境注册 `/debug/pprof`；`prod` 不注册。JWT 工具不会自动为这些路由或业务路由添加鉴权。
+
+## 运行与部署
+
+### 应用生命周期
+
+入口通过信号上下文将取消传给 Wire 的数据初始化，再交给 `pkg/app.App` 管理运行生命周期。入口监听 `SIGINT`、`SIGTERM`、`SIGHUP`、`SIGQUIT`。
+
+运行阶段收到信号、上层上下文取消、服务错误或所有服务正常退出时，会进入停止流程：使用独立的限时上下文调用服务 `Stop`，随后取消运行上下文并等待启动协程退出。HTTP 停止失败时再关闭残留连接；`Run` 返回后由入口执行 Wire 清理函数，关闭数据库和 Redis。
+
+| 预算 | 默认值 | 调整入口 |
+| --- | --- | --- |
+| 数据依赖共享初始化预算 | 30 秒 | YAML `app.startup_timeout_ms` |
+| 单次数据连接初始化期限 | 5 秒 | 各连接 `connect_timeout_ms` |
+| 应用服务停止和退出总预算 | 30 秒 | `pkg/app.WithAppShutdownTimeout` |
+| 单个 HTTP 服务停止期限 | 5 秒 | `pkg/http.WithTimeout` |
+
+HTTP 停止受自身期限和应用总预算中较早者约束。当前后两项通过 Go 选项配置，没有对应的 YAML 字段。业务仍需传递请求上下文、处理取消信号，并自行管理后台任务和已劫持连接的生命周期。
+
+### 容器入口
+
+仓库提供 [Dockerfile](Dockerfile) 和 [docker-compose.yml](docker-compose.yml)。当前容器命令执行 `make init && make generate && make run`，Compose 发布 10001 端口，运行时仍需要 Go 工具链、make 和 sed。
+
+容器配置需要将 `server.http.host` 设为 `0.0.0.0`，并填写从容器内可达的数据库和 Redis 地址；模板的 `127.0.0.1` 只监听容器回环接口。
+
+现有基础镜像标签为 `raylin666/golang:1.17-wire`，镜像实际工具链需要满足当前 Go 1.23.0 的要求。该入口在容器启动时生成代码，再通过 `go run` 运行服务；使用前需核对镜像工具链与运行配置。
+
+## 命令参考
+
+| 命令 | 用途 |
+| --- | --- |
+| `make init` | 在缺少 `.env.yml` 时复制配置模板 |
+| `make generate` | 执行 `go generate -mod=readonly ./...`，当前生成入口为 Wire |
+| `make wire` | 使用 `go.mod` 锁定的 Wire 生成 `cmd/wire_gen.go`，并统一其生成指令 |
+| `go generate ./...` | 通过 `cmd/wire_gen.go` 中的指令调用 `make -C .. wire` |
+| `make gormgen` | 连接默认 MySQL，按已注册 Go 模型生成查询器 |
+| `make run` | 执行 `go run ./cmd -config "$(CONFIG)"` |
+| `make build` | 将入口编译为 `bin/server` |
+| `make help` | 显示命令说明 |
+
+### Wire 依赖注入
+
+Wire 版本来自 [go.mod](go.mod)，当前为 `v0.7.0`。生成流程不依赖全局安装的 `wire` 二进制，也不执行 `go get ...@latest` 或 `go mod tidy`。Wire 子进程继承只读模块模式；缺少模块声明时会报错，需要显式处理依赖变更。
+
+Wire CLI 的依赖也需要保留在模块清单中。如果依赖整理后生成或检查提示 `missing go.sum entry`（例如缺少 `github.com/google/subcommands`），先显式补齐当前固定版本的工具依赖：
+
+```bash
+go get github.com/google/wire/cmd/wire@v0.7.0
 ```
 
-</details>
+该准备命令会更新 `go.mod`、`go.sum`，执行后检查依赖差异，再重试生成。日常生成入口仍保持只读模式，不自动整理或升级依赖。
 
----
+Wire 自带生成器会写入 `-mod=mod` 指令，因此 `make wire` 在生成后将该指令替换为统一的 Makefile 入口。使用上述入口生成，不需要手工修改生成文件。
 
-## 常见问题
+### GORM 查询器生成
 
-### Q: 如何添加新的数据库连接？
+GORM 查询器使用独立命令，`make generate` 不会执行 `make gormgen`。输出目录可通过生成器参数指定：
 
-A: 在配置文件 `db` 节点下添加新连接配置，框架会自动加载。通过 `DataRepo.DB("连接名")` 访问。
-
-### Q: 如何添加告警通知？
-
-A: Recovery 中间件支持 `proposal.NotifyHandler` 类型的告警处理器。可使用 `pkg/notify/recover/email` 提供的邮件告警功能：
-
-```go
-alertNotify := email.NotifyHandler(ctx, config.Notify, logger)
-recovery := middleware.NewDefaultRecovery(cfg, logger, alertNotify)
+```bash
+go run ./generate/gormgen -config .env.yml -out internal/data/dbquery
 ```
 
-### Q: 如何自定义错误码？
+### 编译与静态检查
 
-A: 在 `errcode/code.go` 定义错误码常量，在 `errcode/zh-cn.go` 定义中文消息，在 `errcode/en-us.go` 定义英文消息，在 `errcode/errhttp.go` 定义 HTTP 状态码映射，在 `errcode/vars.go` 添加预创建变量。
+以下在项目根目录执行命令。Wire 检查与生成使用相同的工具依赖：
 
-### Q: Wire 生成代码失败怎么办？
+```bash
+go build -mod=readonly ./...
+go vet -mod=readonly ./...
+go run -mod=readonly github.com/google/wire/cmd/wire check ./cmd
+```
 
-A: 确保 `wire.go` 文件头部有 `//go:build wireinject` 和 `// +build wireinject` 注释，然后执行 `make wire`。注意实际使用 `panic(wire.Build(...))` 模式。
+应用启动信息中的版本来自 `app.version`。修改展示版本请设置该字段；当前入口未读取 Makefile 注入的 `main.Version` 链接变量。
 
-### Q: 如何添加自定义中间件？
+## 主要依赖
 
-A: 实现 `middleware.Middleware` 接口（Name、Priority、Enabled、Handler、Dependencies），使用 `srv.UseMiddleware()` 方法注册，或使用 `srv.UseMiddlewareFunc()` 函数式注册。带依赖的函数式中间件使用 `middleware.NewMiddlewareFuncWithDependencies()`。
+版本以 [go.mod](go.mod) 和 [go.sum](go.sum) 为准，下表列出当前框架使用的主要组件：
 
-### Q: 如何处理请求响应？
-
-A: 使用 `ctx.WithPayload(data)` 设置成功响应，使用 `ctx.WithAbortError(err)` 设置 BusinessError 并中止请求。响应处理由 Request 中间件的 Response 函数自动完成。
-
-### Q: Validator() 返回什么类型？
-
-A: `Validator()` 返回 `error` 类型（不是 bool）。使用 `err := ctx.Validator(req); err != nil` 检查。校验失败时，Validator 会自动调用 `WithAbortError()` 设置错误响应。
-
----
-
-## 版本信息
-
-| 组件 | 版本 |
-| :---: | :---: |
-| **Go** | 1.23.0+ |
-| **Gin** | 1.11.0 |
-| **GORM** | 1.31.1 |
-| **Wire** | 0.7.0 |
-| **Zap** | 1.27.0 |
-
----
-
-## 许可证
-
-本项目采用 [MIT License](https://opensource.org/licenses/MIT) 开源协议。
-
----
-
-## 贡献指南
-
-欢迎提交 Issue 和 Pull Request，请遵循以下规范：
-
-> ⚠️ **贡献规范**
-> - 代码风格遵循 Go 官方规范
-> - 新功能请添加相应的测试用例
-> - 错误码使用 `errcode.New()` 或 `errcode.Err*` 预创建变量，不要直接对 int 常量调用方法
-
----
-
-## 联系方式
-
-- **作者**: raylin666
-- **GitHub**: [https://github.com/raylin666/go-ult-framework](https://github.com/raylin666/go-ult-framework)
-
----
-
-<div align="center">
-
-**如果这个项目对你有帮助，请给一个 ⭐️ Star 支持一下！**
-
-</div>
+| 组件 | 模块 | 版本 |
+| --- | --- | --- |
+| Go | `go` 指令 | 1.23.0 |
+| 通用工具 | `github.com/devpety/go-utils/v3` | v3.0.1 |
+| HTTP | `github.com/gin-gonic/gin` | v1.11.0 |
+| 注入生成 | `github.com/google/wire` | v0.7.0 |
+| ORM | `gorm.io/gorm` | v1.31.1 |
+| MySQL 方言 | `gorm.io/driver/mysql` | v1.5.7 |
+| 查询器生成 | `gorm.io/gen` | v0.3.18 |
+| Redis | `github.com/redis/go-redis/v9` | v9.0.5 |
+| JWT | `github.com/golang-jwt/jwt/v5` | v5.3.1 |
+| 日志 | `go.uber.org/zap` | v1.27.0 |
+| 校验 | `github.com/go-playground/validator/v10` | v10.27.0 |
+| CORS | `github.com/rs/cors` | v1.8.1 |
+| pprof 路由 | `github.com/gin-contrib/pprof` | v1.4.0 |
+| YAML | `gopkg.in/yaml.v3` | v3.0.1 |

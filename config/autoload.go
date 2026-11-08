@@ -3,26 +3,22 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
-	"path"
-	"runtime"
+	"path/filepath"
 	"strings"
 	"ult/config/autoload"
 
-	"github.com/raylin666/go-utils/v2/config"
-)
-
-// envFileName 配置文件名称。
-const (
-	envFileName = ".env.yml"
+	"gopkg.in/yaml.v3"
 )
 
 // Config 应用配置结构体。
 // 包含项目路径和所有模块配置。
 type Config struct {
 	*builder
-	ProjectPath string // 项目根目录路径
+	ProjectPath string // 配置文件所在目录，作为相对资源路径的基准
 }
 
 // builder 配置构建器结构体。
@@ -41,31 +37,34 @@ type builder struct {
 	Notify      autoload.Notify           `yaml:"notify"`      // 告警通知配置
 }
 
-// New 加载配置文件并创建配置实例。
-//
-// 返回:
-//   - *Config: 配置实例
-//   - error: 加载错误
-func New() (*Config, error) {
-	var conf = new(Config)
-	conf.ProjectPath = getProjectPath()
-	var envFile = fmt.Sprintf("%s/%s", conf.ProjectPath, envFileName)
-	err := config.LoadYaml(envFile, &conf.builder)
+// New 从显式路径加载配置；相对路径按进程工作目录解析。
+func New(filename string) (*Config, error) {
+	if strings.TrimSpace(filename) == "" {
+		return nil, fmt.Errorf("配置文件路径不能为空")
+	}
+	filename, err := filepath.Abs(filename)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("解析配置路径失败: %w", err)
+	}
+	conf := &Config{ProjectPath: filepath.Dir(filename)}
+	contents, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("加载配置文件 %s 失败: %w", filename, err)
+	}
+	decoder := yaml.NewDecoder(bytes.NewReader(contents))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&conf.builder); err != nil {
+		return nil, fmt.Errorf("解析配置文件 %s 失败: %w", filename, err)
+	}
+	if conf.builder == nil {
+		return nil, fmt.Errorf("配置文件 %s 不能为空", filename)
+	}
+	var extra interface{}
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err != nil {
+			return nil, fmt.Errorf("解析配置文件 %s 失败: %w", filename, err)
+		}
+		return nil, fmt.Errorf("配置文件 %s 只能包含一个 YAML 文档", filename)
 	}
 	return conf, nil
-}
-
-// getProjectPath 获取项目根目录路径。
-func getProjectPath() string {
-	_, p, _, ok := runtime.Caller(1)
-	if ok {
-		p = path.Dir(p)
-		var index int
-		index = strings.LastIndex(p, string(os.PathSeparator))
-		p = p[:index]
-	}
-
-	return p
 }

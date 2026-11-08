@@ -3,11 +3,16 @@ package repositories
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"ult/config"
+	"ult/config/autoload"
 	"ult/pkg/cache"
 	"ult/pkg/db"
 	"ult/pkg/logger"
+	"ult/pkg/startup"
 
 	"go.uber.org/zap"
 )
@@ -28,70 +33,96 @@ type dataRepo struct {
 	redis *redisRepo // Redis 仓库
 }
 
-// NewDataRepo 创建新的数据仓库实例。
-// 根据配置初始化数据库和 Redis 连接。
-//
-// 参数:
-//   - logger: 日志记录器
-//   - conf: 应用配置
-//
+// NewDataRepo 根据配置创建连接；任一已配置连接失败时回收已创建资源并返回错误。
+func NewDataRepo(ctx context.Context, logger *logger.Logger, conf *config.Config) (DataRepo, error) {
+	if conf == nil {
+		return nil, fmt.Errorf("数据连接配置不能为空")
+	}
+	timeout, err := startup.Timeout(conf.App.StartupTimeoutMS, startup.DefaultTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("依赖初始化总期限无效: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return newDataRepo(ctx, logger, conf.DB, conf.Redis, db.NewDb, cache.NewRedis)
+}
+
+// newDataRepo 创建数据仓库实例，根据配置打开数据库和 Redis 连接。
+// 如果任一连接打开失败，回收已创建资源并返回错误。
+func newDataRepo(ctx context.Context, log *logger.Logger, dbConfigs map[string]autoload.DB, redisConfigs map[string]autoload.Redis,
+	openDB func(context.Context, string, autoload.DB, *logger.Logger) (db.Db, error),
+	openRedis func(context.Context, string, autoload.Redis, *logger.Logger) (cache.Redis, error)) (DataRepo, error) {
+	repo := &dataRepo{
+		db:    &dbRepo{resource: make(map[string]db.Db, len(dbConfigs))},
+		redis: &redisRepo{resource: make(map[string]cache.Redis, len(redisConfigs))},
+	}
+	fail := func(err error) (DataRepo, error) { return nil, errors.Join(err, repo.closeConnections()) }
+	if err := ctx.Err(); err != nil {
+		return fail(err)
+	}
+	if len(dbConfigs) == 0 {
+		log.UseApp(ctx).Warn("目前 Db.repo 未配置连接")
+	}
+	// 固定创建顺序，便于复现失败及验证资源回收。
+	for _, name := range slices.Sorted(maps.Keys(dbConfigs)) {
+		if err := ctx.Err(); err != nil {
+			return fail(err)
+		}
+		connection, err := openDB(ctx, name, dbConfigs[name], log)
+		if connection != nil {
+			repo.db.resource[name] = connection
+		}
+		if err != nil {
+			log.UseApp(ctx).Error(fmt.Sprintf("初始化 Db.repo %s 失败", name), zap.Error(err))
+			return fail(fmt.Errorf("初始化 Db.repo %s 失败: %w", name, err))
+		}
+		if connection == nil {
+			return fail(fmt.Errorf("初始化 Db.repo %s 返回空连接", name))
+		}
+		log.UseApp(ctx).Info(fmt.Sprintf("初始化 Db.repo %s 成功", name))
+	}
+	if len(redisConfigs) == 0 {
+		log.UseApp(ctx).Warn("目前 Redis.repo 未配置连接")
+	}
+	for _, name := range slices.Sorted(maps.Keys(redisConfigs)) {
+		if err := ctx.Err(); err != nil {
+			return fail(err)
+		}
+		connection, err := openRedis(ctx, name, redisConfigs[name], log)
+		if connection != nil {
+			repo.redis.resource[name] = connection
+		}
+		if err != nil {
+			log.UseApp(ctx).Error(fmt.Sprintf("初始化 Redis.repo %s 失败", name), zap.Error(err))
+			return fail(fmt.Errorf("初始化 Redis.repo %s 失败: %w", name, err))
+		}
+		if connection == nil {
+			return fail(fmt.Errorf("初始化 Redis.repo %s 返回空连接", name))
+		}
+		log.UseApp(ctx).Info(fmt.Sprintf("初始化 Redis.repo %s 成功", name))
+	}
+	if err := ctx.Err(); err != nil {
+		return fail(err)
+	}
+	return repo, nil
+}
+
+// closeConnections 关闭所有已打开的数据库连接和 Redis 连接。
 // 返回:
-//   - DataRepo: 数据仓库实例
-func NewDataRepo(logger *logger.Logger, conf *config.Config) DataRepo {
-	var (
-		ctx = context.Background()
-
-		dbRepo    = new(dbRepo)
-		redisRepo = new(redisRepo)
-		repo      = new(dataRepo)
-
-		dbMap    = conf.DB
-		redisMap = conf.Redis
-	)
-
-	// 初始化数据库
-	dbMap[DbConnectionDefaultName] = conf.DB["default"]
-
-	lenDatabase := len(dbMap)
-	if lenDatabase > 0 {
-		dbRepo.resource = make(map[string]db.Db, lenDatabase)
-		for dbName, dbConfig := range dbMap {
-			rdb, err := db.NewDb(dbName, dbConfig, logger)
-			if err != nil {
-				logger.UseApp(ctx).Error(fmt.Sprintf("初始化 Db.repo %s 失败", dbName), zap.Error(err))
-			} else {
-				logger.UseApp(ctx).Info(fmt.Sprintf("初始化 Db.repo %s 成功", dbName))
-				dbRepo.resource[dbName] = rdb
-			}
+//   - error: 关闭连接时的错误，合并所有失败的关闭操作
+func (repo *dataRepo) closeConnections() error {
+	var failures []error
+	for _, name := range slices.Sorted(maps.Keys(repo.redis.resource)) {
+		if err := repo.redis.resource[name].Close(); err != nil {
+			failures = append(failures, fmt.Errorf("关闭 Redis 连接 %s 失败: %w", name, err))
 		}
-
-		repo.db = dbRepo
-	} else {
-		logger.UseApp(ctx).Warn("目前 Db.repo 未配置连接")
 	}
-
-	// 初始化 Redis
-	redisMap[RedisConnectionDefaultName] = conf.Redis["default"]
-
-	lenRedis := len(redisMap)
-	if lenRedis > 0 {
-		redisRepo.resource = make(map[string]cache.Redis, lenRedis)
-		for redisName, redisConfig := range redisMap {
-			redis, err := cache.NewRedis(redisName, redisConfig, logger)
-			if err != nil {
-				logger.UseApp(ctx).Error(fmt.Sprintf("初始化 Redis.repo %s 失败", redisName), zap.Error(err))
-			} else {
-				logger.UseApp(ctx).Info(fmt.Sprintf("初始化 Redis.repo %s 成功", redisName))
-				redisRepo.resource[redisName] = redis
-			}
+	for _, name := range slices.Sorted(maps.Keys(repo.db.resource)) {
+		if err := repo.db.resource[name].Close(); err != nil {
+			failures = append(failures, fmt.Errorf("关闭数据库连接 %s 失败: %w", name, err))
 		}
-
-		repo.redis = redisRepo
-	} else {
-		logger.UseApp(ctx).Warn("目前 Redis.repo 未配置连接")
 	}
-
-	return repo
+	return errors.Join(failures...)
 }
 
 // DB 获取指定名称的数据库连接。

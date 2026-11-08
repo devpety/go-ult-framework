@@ -3,6 +3,7 @@
 package api
 
 import (
+	"ult/errcode"
 	"ult/internal/app"
 	"ult/internal/service"
 	"ult/pkg/http"
@@ -15,6 +16,7 @@ var _ HeartbeatInterface = (*HeartbeatHandler)(nil)
 // 定义健康检查相关的 HTTP 处理方法。
 type HeartbeatInterface interface {
 	State(ctx http.Context) // 获取系统健康状态
+	Ready(ctx http.Context) // 检查已配置依赖是否就绪
 }
 
 // HeartbeatHandler 健康检查 API 处理器。
@@ -42,5 +44,15 @@ func NewHeartbeatHandler(service *service.HeartbeatService, tools *app.Tools) He
 // 调用服务层获取数据库和 Redis 连接状态。
 func (h *HeartbeatHandler) State(ctx http.Context) {
 	var resp = h.service.State(ctx.RequestContext())
-		ctx.WithPayload(resp)
+	ctx.WithPayload(resp)
+}
+
+// Ready 为就绪探针返回 200 或 503，诊断接口 State 保持原有 HTTP 状态语义。
+func (h *HeartbeatHandler) Ready(ctx http.Context) {
+	resp := h.service.State(ctx.RequestContext())
+	if resp.Status != "healthy" {
+		ctx.WithAbortError(errcode.New(errcode.ServiceUnavailableError))
+		return
+	}
+	ctx.WithPayload(resp)
 }

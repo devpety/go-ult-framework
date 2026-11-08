@@ -13,7 +13,7 @@ import (
 var ProviderSet = wire.NewSet(NewHTTPRouter)
 
 // HTTPRouter HTTP 路由注册函数类型。
-type HTTPRouter func(hs *http.HTTPServer)
+type HTTPRouter func(group http.RouterGroup)
 
 // httpRouter HTTP 路由结构体。
 // 包含路由组和 API 处理器映射。
@@ -33,9 +33,9 @@ type httpRouter struct {
 // 返回:
 //   - HTTPRouter: 路由注册函数
 func NewHTTPRouter(heartbeat api.HeartbeatInterface) HTTPRouter {
-	return func(hs *http.HTTPServer) {
+	return func(group http.RouterGroup) {
 		var r = &httpRouter{
-			g: hs.CreateRouterGroup(),
+			g: group,
 			handle: struct {
 				Heartbeat api.HeartbeatInterface
 			}{

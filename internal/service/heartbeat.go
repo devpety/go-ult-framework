@@ -4,6 +4,8 @@ package service
 
 import (
 	"context"
+	"maps"
+	"slices"
 	"time"
 	"ult/internal/app"
 	"ult/internal/data"
@@ -27,9 +29,10 @@ type HeartbeatComponent struct {
 // HeartbeatService 健康检查服务。
 // 提供数据库和 Redis 连接状态检查功能。
 type HeartbeatService struct {
-	dataRepo *data.DataRepo // 数据仓库
-	testRepo repo.TestRepo  // 测试数据仓库
-	tools    *app.Tools     // 应用工具包
+	dataRepo     *data.DataRepo // 数据仓库
+	testRepo     repo.TestRepo  // 测试数据仓库
+	tools        *app.Tools     // 应用工具包
+	probeTimeout time.Duration
 }
 
 // NewHeartbeatService 创建新的健康检查服务实例。
@@ -43,9 +46,10 @@ type HeartbeatService struct {
 //   - *HeartbeatService: 健康检查服务实例
 func NewHeartbeatService(dataRepo *data.DataRepo, testRepo repo.TestRepo, tools *app.Tools) *HeartbeatService {
 	return &HeartbeatService{
-		dataRepo: dataRepo,
-		testRepo: testRepo,
-		tools:    tools,
+		dataRepo:     dataRepo,
+		testRepo:     testRepo,
+		tools:        tools,
+		probeTimeout: 2 * time.Second,
 	}
 }
 
@@ -58,68 +62,67 @@ func NewHeartbeatService(dataRepo *data.DataRepo, testRepo repo.TestRepo, tools 
 // 返回:
 //   - HeartbeatStatusResponse: 健康状态
 func (h *HeartbeatService) State(ctx context.Context) HeartbeatStatusResponse {
-	now := time.Now().Format(time.RFC3339)
-	status := HeartbeatStatusResponse{
-		Status:     "healthy",
-		Timestamp:  now,
-		Components: make(map[string]HeartbeatComponent),
+	timeout := h.probeTimeout
+	if timeout <= 0 {
+		timeout = 2 * time.Second
 	}
-
-	// 检查数据库连接状态
-	if h.dataRepo != nil && h.dataRepo.DbRepo != nil {
-		if h.dataRepo.DbRepo.Count() > 0 {
-			for name, db := range h.dataRepo.DbRepo.All() {
-				if db == nil {
-					status.Components["db_"+name] = HeartbeatComponent{
-						Status:  "unhealthy",
-						Message: "db connection is nil",
-					}
-					status.Status = "degraded"
-					continue
-				}
-
-				if err := db.Ping(); err != nil {
-					status.Components["db_"+name] = HeartbeatComponent{
-						Status:  "unhealthy",
-						Message: err.Error(),
-					}
-					status.Status = "degraded"
-				} else {
-					status.Components["db_"+name] = HeartbeatComponent{
-						Status: "healthy",
-					}
-				}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	status := HeartbeatStatusResponse{Status: "healthy", Timestamp: time.Now().Format(time.RFC3339), Components: make(map[string]HeartbeatComponent)}
+	if h.dataRepo == nil {
+		status.Status = "unhealthy"
+		status.Components["data"] = HeartbeatComponent{Status: "unhealthy", Message: "data repository is nil"}
+		return status
+	}
+	failures := 0
+	check := func(name string, ping func(context.Context) error) {
+		component := HeartbeatComponent{Status: "healthy"}
+		switch {
+		case ping == nil:
+			component = HeartbeatComponent{Status: "unhealthy", Message: "configured connection is missing"}
+		case ctx.Err() != nil:
+			component = HeartbeatComponent{Status: "unhealthy", Message: ctx.Err().Error()}
+		default:
+			if err := ping(ctx); err != nil {
+				component = HeartbeatComponent{Status: "unhealthy", Message: err.Error()}
 			}
 		}
+		if component.Status == "unhealthy" {
+			failures++
+		}
+		status.Components[name] = component
 	}
-
-	// 检查 Redis 连接状态
-	if h.dataRepo != nil && h.dataRepo.RedisRepo != nil {
-		if h.dataRepo.RedisRepo.Count() > 0 {
-			for name, redis := range h.dataRepo.RedisRepo.All() {
-				if redis == nil {
-					status.Components["redis_"+name] = HeartbeatComponent{
-						Status:  "unhealthy",
-						Message: "redis connection is nil",
-					}
-					status.Status = "degraded"
-					continue
-				}
-
-				if err := redis.Ping(ctx); err != nil {
-					status.Components["redis_"+name] = HeartbeatComponent{
-						Status:  "unhealthy",
-						Message: err.Error(),
-					}
-					status.Status = "degraded"
-				} else {
-					status.Components["redis_"+name] = HeartbeatComponent{
-						Status: "healthy",
-					}
-				}
-			}
+	dbNames := h.dataRepo.DBNames
+	if len(dbNames) == 0 && h.dataRepo.DbRepo != nil {
+		dbNames = slices.Sorted(maps.Keys(h.dataRepo.DbRepo.All()))
+	}
+	for _, name := range dbNames {
+		if h.dataRepo.DbRepo == nil || h.dataRepo.DbRepo.DB(name) == nil {
+			check("db_"+name, nil)
+			continue
+		}
+		check("db_"+name, h.dataRepo.DbRepo.DB(name).PingContext)
+	}
+	redisNames := h.dataRepo.RedisNames
+	if len(redisNames) == 0 && h.dataRepo.RedisRepo != nil {
+		redisNames = slices.Sorted(maps.Keys(h.dataRepo.RedisRepo.All()))
+	}
+	for _, name := range redisNames {
+		if h.dataRepo.RedisRepo == nil || h.dataRepo.RedisRepo.Redis(name) == nil {
+			check("redis_"+name, nil)
+			continue
+		}
+		check("redis_"+name, h.dataRepo.RedisRepo.Redis(name).Ping)
+	}
+	if failures > 0 {
+		status.Status = "degraded"
+		if failures == len(status.Components) {
+			status.Status = "unhealthy"
 		}
 	}
-
+	if err := ctx.Err(); err != nil {
+		status.Status = "unhealthy"
+		status.Components["probe"] = HeartbeatComponent{Status: "unhealthy", Message: err.Error()}
+	}
 	return status
 }

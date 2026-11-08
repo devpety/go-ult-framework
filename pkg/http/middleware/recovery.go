@@ -15,11 +15,9 @@ import (
 	"ult/pkg/types"
 	pkgtypes "ult/pkg/types"
 
-	goerror "errors"
-
+	utilsMiddleware "github.com/devpety/go-utils/v3/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	utilsMiddleware "github.com/raylin666/go-utils/v2/middleware"
 	"go.uber.org/zap"
 )
 
@@ -29,7 +27,7 @@ type RecoveryConfig struct {
 	Enabled bool
 
 	// AlertNotify 告警通知处理函数
-	// 当发生 panic 时，会调用此函数发送告警通知
+	// 处理 panic 和显式调用 Alert 的业务错误
 	AlertNotify proposal.NotifyHandler
 
 	// Config 应用配置（用于告警通知）
@@ -45,6 +43,8 @@ type Recovery struct {
 	config *RecoveryConfig
 	logger *logger.Logger
 }
+
+const panicStackKey = "ult.recovery_stack"
 
 // NewRecovery 创建 Recovery 中间件实例。
 //
@@ -83,8 +83,8 @@ func (r *Recovery) Dependencies() []string {
 	return []string{}
 }
 
-// Handler 返回中间件处理函数（实现 utilsMiddleware.Middleware 接口）。
-func (r *Recovery) Handler() utilsMiddleware.Handler {
+// Handler 返回中间件处理函数。
+func (r *Recovery) Handler() HandlerFunc {
 	return r.handler()
 }
 
@@ -92,12 +92,11 @@ func (r *Recovery) Handler() utilsMiddleware.Handler {
 // 捕获 panic 并进行恢复处理。
 func (r *Recovery) handler() HandlerFunc {
 	return func(ctx *gin.Context) {
-		ManageRequestCompletion(ctx)
 		defer func() {
 			// 即使日志或通知回调失败，也必须完成响应和资源清理。
 			defer r.completeRequest(ctx)
 			if err := recover(); err != nil {
-				r.handleRecovery(ctx, err)
+				r.recoverPanic(ctx, err)
 			}
 		}()
 		ctx.Next()
@@ -106,9 +105,10 @@ func (r *Recovery) handler() HandlerFunc {
 
 // completeRequest 完成请求处理，确保响应和资源清理。
 func (r *Recovery) completeRequest(ctx *gin.Context) {
+	defer r.notifyAlert(ctx)
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			r.handleRecovery(ctx, recovered)
+			r.recoverPanic(ctx, recovered)
 			r.writeErrorResponse(ctx)
 		}
 	}()
@@ -116,9 +116,24 @@ func (r *Recovery) completeRequest(ctx *gin.Context) {
 	r.writeErrorResponse(ctx)
 }
 
+// recoverPanic 在保留统一收尾的同时，将传输中断交回 net/http 处理。
+func (r *Recovery) recoverPanic(ctx *gin.Context, recovered interface{}) {
+	if recovered == nethttp.ErrAbortHandler {
+		// 中断信号不能被统一响应覆盖，收尾回调仍需执行以回收请求上下文。
+		ctx.Set(pkgtypes.ContextResponseAbortedNameKey, true)
+		ctx.Abort()
+		panic(recovered)
+	}
+	r.handleRecovery(ctx, recovered)
+	if ctx.Writer.Written() {
+		// 状态与部分正文已提交，正常返回会让截断的 chunked 响应被视为完整响应。
+		panic(nethttp.ErrAbortHandler)
+	}
+}
+
 // 没有 Request 回调或收尾异常时，仍为尚未提交的失败请求返回统一错误。
 func (r *Recovery) writeErrorResponse(ctx *gin.Context) {
-	if ctx.Writer.Written() {
+	if ctx.Writer.Written() || ctx.GetBool(pkgtypes.ContextResponseAbortedNameKey) {
 		return
 	}
 	value, _ := ctx.Get(pkgtypes.ContextAbortErrorNameKey)
@@ -126,6 +141,16 @@ func (r *Recovery) writeErrorResponse(ctx *gin.Context) {
 	if !ok || businessErr == nil {
 		return
 	}
+	traceID := recoveryTraceID(ctx)
+	httpCode := businessErr.HTTPCode()
+	if httpCode == 0 {
+		httpCode = nethttp.StatusInternalServerError
+	}
+	ctx.JSON(httpCode, gin.H{"trace_id": traceID, "code": businessErr.BusinessCode(), "message": businessErr.Message(), "desc": businessErr.Desc()})
+}
+
+// panic 可能发生在 Request 初始化前，恢复边界仍需为日志、告警和响应确定同一个 ID。
+func recoveryTraceID(ctx *gin.Context) string {
 	traceID := ctx.GetString(pkgtypes.TraceIdName)
 	if traceID == "" {
 		traceID = ctx.GetHeader(pkgtypes.TraceIdName)
@@ -134,22 +159,18 @@ func (r *Recovery) writeErrorResponse(ctx *gin.Context) {
 		}
 		ctx.Set(pkgtypes.TraceIdName, traceID)
 	}
-	httpCode := businessErr.HTTPCode()
-	if httpCode == 0 {
-		httpCode = nethttp.StatusInternalServerError
-	}
-	ctx.JSON(httpCode, gin.H{"trace_id": traceID, "code": businessErr.BusinessCode(), "message": businessErr.Message(), "desc": businessErr.Desc()})
+	return traceID
 }
 
 // handleRecovery 处理 panic 恢复逻辑。
-// 记录错误日志、堆栈信息，发送告警通知，设置错误响应。
+// 记录内部错误和堆栈，设置失败响应；告警在统一收尾阶段发送。
 //
 // 参数:
 //   - ctx: Gin 上下文
 //   - err: panic 错误信息
 func (r *Recovery) handleRecovery(ctx *gin.Context, err interface{}) {
 	// 先记录失败状态，防止日志或用户通知函数的异常把请求变成成功。
-	ctx.Set(pkgtypes.ContextAbortErrorNameKey, errcode.New(errcode.ServerError).WithStackError(goerror.New("got panic")))
+	ctx.Set(pkgtypes.ContextAbortErrorNameKey, errcode.New(errcode.ServerError).Alert())
 	ctx.Status(nethttp.StatusInternalServerError)
 	ctx.Abort()
 	defer func() {
@@ -157,35 +178,64 @@ func (r *Recovery) handleRecovery(ctx *gin.Context, err interface{}) {
 			fmt.Fprintf(os.Stderr, "Recovery 日志或通知处理失败: %v\n", recovered)
 		}
 	}()
+	cause, ok := err.(error)
+	if !ok {
+		cause = fmt.Errorf("panic: %v", err)
+	}
+	ctx.Set(pkgtypes.ContextAbortErrorNameKey, errcode.New(errcode.ServerError).WithStackError(cause).Alert())
 	// 获取堆栈信息
 	var stack = string(debug.Stack())
+	ctx.Set(panicStackKey, stack)
+	traceID := recoveryTraceID(ctx)
+	requestContext := &pkgtypes.RequestContext{}
+	requestContext.WithTraceID(traceID)
+	logContext := pkgtypes.NewRequestContext(ctx.Request.Context(), requestContext)
 
 	// 记录错误日志
-	r.logger.UseApp(ctx).Error(
+	r.logger.UseApp(logContext).Error(
 		"got panic",
 		zap.String("panic", fmt.Sprintf("%+v", err)),
 		zap.String("stack", stack),
 	)
 
-	// 发送告警通知
-	if r.config.AlertNotify != nil && r.config.Config != nil {
-		r.config.AlertNotify(&proposal.AlertMessage{
-			ProjectName:  r.config.Config.App.Name,
-			Environment:  r.config.Config.Environment,
-			TraceID:      ctx.GetString(pkgtypes.TraceIdName),
-			HOST:         ctx.Request.Host,
-			URI:          ctx.Request.URL.RequestURI(),
-			Method:       ctx.Request.Method,
-			ErrorMessage: err,
-			ErrorStack:   stack,
-			Timestamp:    time.Now(),
-		})
-	}
-
 	// 打印堆栈信息（如果配置允许）
 	if r.config.PrintStack {
 		fmt.Printf("Panic recovered: %v\nStack trace:\n%s\n", err, stack)
 	}
+}
+
+// notifyAlert 是业务错误和 panic 共用的告警出口，通知失败不影响响应和资源回收。
+func (r *Recovery) notifyAlert(ctx *gin.Context) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			fmt.Fprintf(os.Stderr, "告警通知处理失败: %v\n", recovered)
+		}
+	}()
+	if r.config.AlertNotify == nil {
+		return
+	}
+	value, _ := ctx.Get(pkgtypes.ContextAbortErrorNameKey)
+	failure, ok := value.(errcode.BusinessError)
+	if !ok || failure == nil || !failure.IsAlert() {
+		return
+	}
+	message := &proposal.AlertMessage{
+		TraceID:      recoveryTraceID(ctx),
+		HOST:         ctx.Request.Host,
+		URI:          ctx.Request.URL.RequestURI(),
+		Method:       ctx.Request.Method,
+		ErrorMessage: failure.Error(),
+		ErrorStack:   ctx.GetString(panicStackKey),
+		Timestamp:    time.Now(),
+	}
+	if message.ErrorStack == "" && failure.StackError() != nil {
+		message.ErrorStack = fmt.Sprintf("%+v", failure.StackError())
+	}
+	if r.config.Config != nil {
+		message.ProjectName = r.config.Config.App.Name
+		message.Environment = r.config.Config.Environment
+	}
+	r.config.AlertNotify(message)
 }
 
 // DefaultRecoveryConfig 返回默认 Recovery 配置。

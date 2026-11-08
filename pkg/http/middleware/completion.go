@@ -6,10 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const (
-	requestCompletionKey      = "ult.request_completion"
-	requestCompletionOwnerKey = "ult.request_completion_owner"
-)
+const requestCompletionKey = "ult.request_completion"
 
 type requestCompletion struct {
 	once     sync.Once
@@ -34,10 +31,4 @@ func CompleteRequest(ctx *gin.Context) {
 			completion.response()
 		}
 	})
-}
-
-// ManageRequestCompletion 将收尾交给最外层调用者，避免内层提前输出和回收 Context。
-// 自定义 Recovery 可在执行下游前调用，并在收尾阶段调用 CompleteRequest。
-func ManageRequestCompletion(ctx *gin.Context) {
-	ctx.Set(requestCompletionOwnerKey, true)
 }

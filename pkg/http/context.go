@@ -4,17 +4,23 @@ package http
 import (
 	"bytes"
 	stdCtx "context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
+	"reflect"
 	"sync"
 	"ult/errcode"
 	pkgtypes "ult/pkg/types"
 
+	"github.com/devpety/go-utils/v3/validator"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
+	govalidator "github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
-	"github.com/raylin666/go-utils/v2/validator"
 )
 
 // HandlerFunc 定义本包使用的处理函数类型。
@@ -62,9 +68,16 @@ type Context interface {
 	// 如果不存在，则生成新的 UUID 并存储。
 	TraceID() string
 
-	// Validator 使用配置的验证器验证请求结构体。
-	// 返回 nil 表示验证成功，返回 error 表示验证失败。
-	Validator(req interface{}) error
+	// Validate 仅校验已绑定的结构体，不读取或覆盖请求数据。
+	Validate(req interface{}) error
+
+	// BindAndValidateJSON 绑定 JSON 并校验，失败时设置统一错误并中止请求。
+	BindAndValidateJSON(req interface{}) error
+
+	// BindAndValidateForm 绑定表单并校验，失败时设置统一错误并中止请求。
+	BindAndValidateForm(req interface{}) error
+
+	// WithValidator 设置自定义校验器。
 	WithValidator(v validator.Validator)
 
 	// WithAbortError 设置错误以中止请求。
@@ -76,6 +89,10 @@ type Context interface {
 
 	// WithPayload 设置成功响应的数据负载。
 	WithPayload(payload interface{})
+
+	// WithStatus 设置尚未提交的成功响应状态码，允许 200 到 299。
+	WithStatus(code int)
+
 	// GetPayload 获取响应数据负载。
 	// 用于响应处理中间件获取数据。
 	GetPayload() interface{}
@@ -142,10 +159,22 @@ func (c *context) reset() {
 // init 初始化上下文，读取并存储原始请求体。
 // 这允许在请求处理过程中多次读取请求体。
 // 如果读取请求体失败，返回错误，调用者应该处理这个错误。
-func (c *context) init() error {
+func (c *context) init(maxBodyBytes int64) error {
+	if c.ctx.Request.Body != nil {
+		c.ctx.Request.Body = http.MaxBytesReader(c.ctx.Writer, c.ctx.Request.Body, maxBodyBytes)
+	}
 	body, err := c.ctx.GetRawData()
 	if err != nil {
-		c.WithAbortError(errcode.New(errcode.ServerError).WithDesc(err.Error()))
+		code := errcode.ServerError
+		var sizeError *http.MaxBytesError
+		var timeoutError net.Error
+		switch {
+		case errors.As(err, &sizeError):
+			code = errcode.RequestBodyTooLargeError
+		case errors.Is(err, stdCtx.DeadlineExceeded) || (errors.As(err, &timeoutError) && timeoutError.Timeout()):
+			code = errcode.RequestTimeoutError
+		}
+		c.WithAbortError(errcode.New(code).WithStackError(err))
 		return err
 	}
 
@@ -224,41 +253,72 @@ func (c *context) TraceID() string {
 	return tid
 }
 
-// Validator 执行请求验证：绑定和校验。
-// 返回 nil 表示验证成功，返回 error 表示验证失败。
-//
-// 该方法：
-// 1. 将表单数据绑定到请求结构体
-// 2. 使用配置的验证器验证结构体
-// 3. 如果验证失败则设置适当的错误并返回
-func (c *context) Validator(req interface{}) error {
-	if err := c.ShouldBindForm(req); err != nil {
-		businessErr := errcode.New(errcode.ParamValidateError).WithStackError(err)
-		c.WithAbortError(businessErr)
-		return businessErr
-	}
-
+// Validate 仅校验结构体，绑定方式由调用方显式选择。
+func (c *context) Validate(req interface{}) error {
 	validate, ok := c.ctx.Get(pkgtypes.ContextValidatorNameKey)
 	if !ok {
-		businessErr := errcode.New(errcode.ServerError).WithDesc("validator not found")
+		businessErr := errcode.New(errcode.ServerError).WithStackError(errors.New("请求验证器未初始化"))
 		c.WithAbortError(businessErr)
 		return businessErr
 	}
 
 	validatorInst, ok := validate.(validator.Validator)
-	if !ok {
-		businessErr := errcode.New(errcode.ServerError).WithDesc("validator type assertion failed")
+	if !ok || validatorInst == nil {
+		businessErr := errcode.New(errcode.ServerError).WithStackError(errors.New("请求验证器类型无效"))
 		c.WithAbortError(businessErr)
 		return businessErr
 	}
 
-	if errStr := validatorInst.Validate(req); errStr != nil {
-		businessErr := errcode.New(errcode.ParamValidateError).WithDesc(errStr.Error())
+	if err := validatorInst.Validate(req); err != nil {
+		var invalid *govalidator.InvalidValidationError
+		var businessErr errcode.BusinessError
+		if errors.As(err, &invalid) {
+			businessErr = errcode.New(errcode.ServerError).WithStackError(err)
+		} else {
+			businessErr = errcode.New(errcode.ParamValidateError).WithDesc(err.Error())
+		}
 		c.WithAbortError(businessErr)
 		return businessErr
 	}
 
 	return nil
+}
+
+// BindAndValidateJSON 将 JSON 绑定到非 nil 结构体指针并校验。
+func (c *context) BindAndValidateJSON(req interface{}) error {
+	return c.bindAndValidate(req, binding.JSON)
+}
+
+// BindAndValidateForm 将查询参数和表单绑定到非 nil 结构体指针后校验。
+func (c *context) BindAndValidateForm(req interface{}) error {
+	return c.bindAndValidate(req, binding.Form)
+}
+
+// bindAndValidate 绑定并校验请求参数。
+func (c *context) bindAndValidate(req interface{}, binder binding.Binding) error {
+	value := reflect.ValueOf(req)
+	if value.Kind() != reflect.Ptr || value.IsNil() || value.Elem().Kind() != reflect.Struct {
+		businessErr := errcode.New(errcode.ServerError).WithStackError(fmt.Errorf("绑定目标必须为非 nil 的结构体指针，实际为 %T", req))
+		c.WithAbortError(businessErr)
+		return businessErr
+	}
+	if err := c.ctx.ShouldBindWith(req, binder); err != nil {
+		var invalidUnmarshal *json.InvalidUnmarshalError
+		var invalidValidation *govalidator.InvalidValidationError
+		var validationErrors govalidator.ValidationErrors
+		var businessErr errcode.BusinessError
+		switch {
+		case errors.As(err, &invalidUnmarshal), errors.As(err, &invalidValidation):
+			businessErr = errcode.New(errcode.ServerError).WithStackError(err)
+		case errors.As(err, &validationErrors):
+			businessErr = errcode.New(errcode.ParamValidateError).WithStackError(err).WithDesc(err.Error())
+		default:
+			businessErr = errcode.New(errcode.ParamBindError).WithStackError(err)
+		}
+		c.WithAbortError(businessErr)
+		return businessErr
+	}
+	return c.Validate(req)
 }
 
 // WithValidator 设置请求验证的验证器实例。
@@ -298,6 +358,17 @@ func (c *context) GetAbortError() errcode.BusinessError {
 // WithPayload 设置成功响应的数据负载。
 func (c *context) WithPayload(payload interface{}) {
 	c.ctx.Set(pkgtypes.ContextPayloadNameKey, payload)
+}
+
+// WithStatus 设置成功响应状态码；调用方应在写出响应前完成设置。
+func (c *context) WithStatus(code int) {
+	if code < http.StatusOK || code >= http.StatusMultipleChoices {
+		panic(fmt.Sprintf("成功响应状态码必须在 200 到 299 之间，实际为 %d", code))
+	}
+	if c.ctx.Writer.Written() {
+		panic("响应已提交，不能修改状态码")
+	}
+	c.ctx.Status(code)
 }
 
 // GetPayload 获取响应数据负载。
@@ -436,6 +507,13 @@ var contextPool = &sync.Pool{
 // 用额外功能封装 Gin 上下文。
 // 如果初始化失败（如读取请求体失败），返回错误。
 func newContext(ctx *gin.Context) (Context, error) {
+	return newContextWithLimit(ctx, defaultMaxBodyBytes)
+}
+
+// newContextWithLimit 从池中创建或获取上下文对象，并完成初始化。
+// 允许指定最大请求体字节数。
+// 如果初始化失败（如读取请求体失败），返回错误。
+func newContextWithLimit(ctx *gin.Context, maxBodyBytes int64) (Context, error) {
 	context := contextPool.Get().(*context)
 	context.ctx = ctx
 	initialized := false
@@ -445,7 +523,7 @@ func newContext(ctx *gin.Context) (Context, error) {
 			recoveryContext(context)
 		}
 	}()
-	if err := context.init(); err != nil {
+	if err := context.init(maxBodyBytes); err != nil {
 		// init() 方法已经设置了错误并中止了请求
 		// 这里返回 nil 和错误，调用者应该处理这个错误
 		return nil, err

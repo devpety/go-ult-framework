@@ -9,7 +9,7 @@ import (
 	"ult/pkg/logger"
 	"ult/pkg/proposal"
 
-	"github.com/raylin666/go-utils/v2/mail"
+	"github.com/devpety/go-utils/v3/mail"
 	"go.uber.org/zap"
 )
 
@@ -50,6 +50,10 @@ func NotifyHandler(ctx context.Context, config autoload.Notify, logger *logger.L
 				mail.WithMailPort(config.Recover.Email.Port),
 				mail.WithMailUser(config.Recover.Email.User),
 				mail.WithMailPass(config.Recover.Email.Pass))
+			if err != nil {
+				logger.UseApp(ctx).Error("创建告警邮件客户端失败", zap.Error(err))
+				return
+			}
 
 			if err := m.SendTextHtml(subject, body, strings.Split(config.Recover.Email.To, ",")); err != nil {
 				logger.UseApp(ctx).Error("发送告警通知邮件失败", zap.Error(err))
