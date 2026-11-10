@@ -7,13 +7,17 @@ import (
 	"gorm.io/gen"
 )
 
+// NewGeneratorDefaultDb 从注册模型生成查询器，连接为空时使用离线模式。
 func NewGeneratorDefaultDb(dbInterface db.Db, outPath string) {
 	g := gen.NewGenerator(gen.Config{
 		OutPath: outPath,
 		Mode:    gen.WithDefaultQuery | gen.WithoutContext | gen.WithQueryInterface,
 	})
 
-	g.UseDB(dbInterface.Get().DB())
+	// 仅从 Go 结构体生成时可使用生成器的内置离线 Dialector。
+	if dbInterface != nil {
+		g.UseDB(dbInterface.Get().DB())
+	}
 
 	testModel := model.Test{}
 

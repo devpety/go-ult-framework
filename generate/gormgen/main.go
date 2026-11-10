@@ -20,7 +20,12 @@ import (
 func main() {
 	configFile := flag.String("config", ".env.yml", "配置文件路径")
 	outPath := flag.String("out", "internal/data/dbquery", "查询器输出目录")
+	offline := flag.Bool("offline", false, "仅从 Go 模型生成，不加载配置或连接数据库")
 	flag.Parse()
+	if *offline {
+		genDb.NewGeneratorDefaultDb(nil, *outPath)
+		return
+	}
 
 	ctx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
