@@ -5,12 +5,7 @@ package router
 import (
 	"ult/internal/api"
 	"ult/pkg/http"
-
-	"github.com/google/wire"
 )
-
-// ProviderSet Wire 依赖注入提供者集合。
-var ProviderSet = wire.NewSet(NewHTTPRouter)
 
 // HTTPRouter HTTP 路由注册函数类型。
 type HTTPRouter func(group http.RouterGroup)
