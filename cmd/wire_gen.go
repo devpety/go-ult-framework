@@ -23,6 +23,7 @@ import (
 // Injectors from wire.go:
 
 func initApp(ctx context.Context, conf *config.Config, appLogger *logger.Logger) (*app.App, func(), error) {
+	environment := shared.NewEnvironment(conf)
 	dataData, cleanup, err := data.NewData(ctx, conf, appLogger)
 	if err != nil {
 		return nil, nil, err
@@ -32,8 +33,7 @@ func initApp(ctx context.Context, conf *config.Config, appLogger *logger.Logger)
 	heartbeatService := service.NewHeartbeatService(dataRepo, testRepo)
 	heartbeatInterface := api.NewHeartbeatHandler(heartbeatService)
 	httpRouter := router.NewHTTPRouter(heartbeatInterface)
-	systemEnvironment := shared.NewEnvironment(conf)
-	httpServer, err := server.NewHTTPServer(conf, appLogger, systemEnvironment, httpRouter)
+	httpServer, err := server.NewHTTPServer(conf, appLogger, environment, httpRouter)
 	if err != nil {
 		cleanup()
 		return nil, nil, err
