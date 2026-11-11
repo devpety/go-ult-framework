@@ -10,25 +10,25 @@ import (
 	"syscall"
 	"ult/config"
 	"ult/errcode"
-	"ult/internal/app"
-	pkgapp "ult/pkg/app"
+	"ult/internal/infra/auth"
+	"ult/internal/infra/shared"
+	"ult/pkg/app"
 	"ult/pkg/http"
 	"ult/pkg/logger"
 
 	utils_logger "github.com/devpety/go-utils/v3/logger"
-	"github.com/devpety/go-utils/v3/server/system"
 )
 
 func newApp(
 	ctx context.Context,
 	config *config.Config,
-	tools *app.Tools,
-	hs *http.HTTPServer) *pkgapp.App {
-	return pkgapp.NewApp(
+	appLogger *logger.Logger,
+	hs *http.HTTPServer) *app.App {
+	return app.NewApp(
 		config,
-		tools.Logger(),
-		pkgapp.WithAppContext(ctx),
-		pkgapp.WithAppServer(hs))
+		appLogger,
+		app.WithAppContext(ctx),
+		app.WithAppServer(hs))
 }
 
 func main() {
@@ -49,19 +49,16 @@ func main() {
 	}
 
 	// 初始化 Environment
-	var environment = system.NewEnvironment(conf.Environment)
-	conf.Environment = environment.Value()
+	conf.Environment = shared.NewEnvironment(conf).Value()
 
 	// 打印启动信息
-	app.NewLogo(conf)
+	printLogo(conf)
 
 	// 初始化错误状态码
 	errcode.NewRegistry(conf.Language.Local)
 
 	// 初始化 Datetime
-	var datetime = system.NewDatetime(
-		system.WithLocation(conf.Datetime.Location),
-		system.WithCSTLayout(conf.Datetime.CSTLayout))
+	var datetime = shared.NewDatetime(conf)
 
 	// 初始化 Logger
 	appLogger, err := logger.NewJSONLogger(
@@ -80,18 +77,14 @@ func main() {
 		panic(fmt.Sprintf("日志初始化失败：%v", err))
 	}
 
-	// 初始化 JWT 鉴权认证
-	jwt, err := app.NewJWT(conf)
-	if err != nil {
+	// 启动期校验 JWT 密钥配置，避免配置错误延迟到首次鉴权才暴露。
+	if _, err := auth.NewJWT(conf); err != nil {
 		appLogger.UseApp(context.Background()).Error(fmt.Sprintf("JWT 初始化失败：%v", err))
 		panic(err)
 	}
 
-	// 创建公共工具实例
-	var tools = app.NewTools(appLogger, datetime, environment, jwt)
-
 	// 初始化应用服务
-	application, cleanup, err := initApp(ctx, conf, tools)
+	application, cleanup, err := initApp(ctx, conf, appLogger)
 	if err != nil {
 		if errors.Is(err, context.Canceled) && ctx.Err() != nil {
 			appLogger.UseApp(ctx).Info("依赖初始化已取消")

@@ -12,13 +12,14 @@ import (
 
 	"ult/config"
 	"ult/config/autoload"
-	"ult/internal/app"
 	"ult/internal/router"
 	pkghttp "ult/pkg/http"
 	pkgmiddleware "ult/pkg/http/middleware"
+	"ult/pkg/logger"
 	"ult/pkg/notify/recover/email"
 
 	"github.com/devpety/go-utils/v3/http"
+	"github.com/devpety/go-utils/v3/server/system"
 )
 
 // NewHTTPServer 创建并配置 HTTP 服务器实例。
@@ -26,7 +27,8 @@ import (
 //
 // 参数:
 //   - config: 应用配置
-//   - logger: 日志实例
+//   - appLogger: 日志实例
+//   - environment: 运行环境，决定 pprof 是否注册
 //   - httpRouter: 路由注册函数
 //
 // 返回:
@@ -34,7 +36,8 @@ import (
 //   - error: 配置或请求限制无效
 func NewHTTPServer(
 	config *config.Config,
-	tool *app.Tools,
+	appLogger *logger.Logger,
+	environment system.Environment,
 	httpRouter router.HTTPRouter) (*pkghttp.HTTPServer, error) {
 	if config == nil {
 		return nil, fmt.Errorf("HTTP 配置不能为空")
@@ -57,18 +60,18 @@ func NewHTTPServer(
 		return nil, err
 	}
 	if config.Notify.Recover.Email.Host != "" {
-		options = append(options, pkghttp.WithAlertNotify(email.NotifyHandler(context.Background(), config.Notify, tool.Logger())))
+		options = append(options, pkghttp.WithAlertNotify(email.NotifyHandler(context.Background(), config.Notify, appLogger)))
 	}
 
 	options = append(options,
 		pkghttp.WithMiddleware(corsMiddleware),
 		pkghttp.WithRoutes(httpRouter),
-		pkghttp.WithPProf(config.Environment),
+		pkghttp.WithPProf(environment.Value()),
 	)
 	
 	return pkghttp.NewServer(
 		config,
-		tool.Logger(),
+		appLogger,
 		[]http.ServerOption{
 			http.WithServerNetwork(config.Server.Http.Network),
 			http.WithServerAddress(addr),

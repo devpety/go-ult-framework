@@ -11,10 +11,10 @@ import (
 
 	"ult/config"
 	"ult/config/autoload"
-	"ult/internal/app"
 	"ult/internal/data/dbquery"
 	"ult/pkg/cache"
 	"ult/pkg/db"
+	"ult/pkg/logger"
 	"ult/pkg/repositories"
 
 	"github.com/devpety/go-utils/v3/cache/redis"
@@ -58,20 +58,20 @@ type DataRepo struct {
 //
 // 参数:
 //   - c: 应用配置
-//   - tools: 应用工具包
+//   - appLogger: 日志实例
 //
 // 返回:
 //   - Data: 数据实例
 //   - func(): 清理函数
 //   - error: 配置或连接初始化错误
-func NewData(ctx context.Context, c *config.Config, tools *app.Tools) (Data, func(), error) {
+func NewData(ctx context.Context, c *config.Config, appLogger *logger.Logger) (Data, func(), error) {
 	if c == nil {
 		return nil, nil, fmt.Errorf("数据连接配置不能为空")
 	}
 	if err := validateDefaultConnections(c.DB, c.Redis); err != nil {
 		return nil, nil, err
 	}
-	repo, err := repositories.NewDataRepo(ctx, tools.Logger(), c)
+	repo, err := repositories.NewDataRepo(ctx, appLogger, c)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -81,11 +81,11 @@ func NewData(ctx context.Context, c *config.Config, tools *app.Tools) (Data, fun
 		DBNames:    slices.Sorted(maps.Keys(c.DB)),
 		RedisNames: slices.Sorted(maps.Keys(c.Redis)),
 	}
-	instance, cleanup := newDataInstance(connections, tools)
+	instance, cleanup := newDataInstance(connections, appLogger)
 	return instance, cleanup, nil
 }
 
-func newDataInstance(connections *DataRepo, tools *app.Tools) (Data, func()) {
+func newDataInstance(connections *DataRepo, appLogger *logger.Logger) (Data, func()) {
 	ctx := context.Background()
 	data := &dataImpl{dataRepo: connections.snapshot()}
 	// 清理持有独立集合，不再依赖对外提供的数据仓库对象。
@@ -111,18 +111,18 @@ func newDataInstance(connections *DataRepo, tools *app.Tools) (Data, func()) {
 		for dbName, dbRepo := range closeDB {
 			if dbRepo != nil {
 				if err := dbRepo.Close(); err != nil {
-					tools.Logger().UseApp(ctx).Error(fmt.Sprintf("关闭数据库连接 %s 失败: %v", dbName, err))
+					appLogger.UseApp(ctx).Error(fmt.Sprintf("关闭数据库连接 %s 失败: %v", dbName, err))
 				}
 			}
-			tools.Logger().UseApp(ctx).Info(fmt.Sprintf("关闭数据库连接: %s", dbName))
+			appLogger.UseApp(ctx).Info(fmt.Sprintf("关闭数据库连接: %s", dbName))
 		}
 		for redisName, redisRepo := range closeRedis {
 			if redisRepo != nil {
 				if err := redisRepo.Close(); err != nil {
-					tools.Logger().UseApp(ctx).Error(fmt.Sprintf("关闭 Redis 连接 %s 失败: %v", redisName, err))
+					appLogger.UseApp(ctx).Error(fmt.Sprintf("关闭 Redis 连接 %s 失败: %v", redisName, err))
 				}
 			}
-			tools.Logger().UseApp(ctx).Info(fmt.Sprintf("关闭 Redis 连接: %s", redisName))
+			appLogger.UseApp(ctx).Info(fmt.Sprintf("关闭 Redis 连接: %s", redisName))
 		}
 	})
 

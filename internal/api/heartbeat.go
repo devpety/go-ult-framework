@@ -4,7 +4,6 @@ package api
 
 import (
 	"ult/errcode"
-	"ult/internal/app"
 	"ult/internal/service"
 	"ult/pkg/http"
 )
@@ -22,21 +21,18 @@ type HeartbeatInterface interface {
 // HeartbeatHandler 健康检查 API 处理器。
 type HeartbeatHandler struct {
 	service *service.HeartbeatService // 健康检查服务
-	tools   *app.Tools                // 应用工具包
 }
 
 // NewHeartbeatHandler 创建新的健康检查 API 处理器实例。
 //
 // 参数:
 //   - service: 健康检查服务
-//   - tools: 应用工具包
 //
 // 返回:
 //   - HeartbeatInterface: 健康检查 API 接口
-func NewHeartbeatHandler(service *service.HeartbeatService, tools *app.Tools) HeartbeatInterface {
+func NewHeartbeatHandler(service *service.HeartbeatService) HeartbeatInterface {
 	return &HeartbeatHandler{
 		service: service,
-		tools:   tools,
 	}
 }
 

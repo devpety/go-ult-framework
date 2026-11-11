@@ -1,5 +1,4 @@
-// Package app 提供应用工具包。
-package app
+package main
 
 import (
 	"fmt"
@@ -9,12 +8,12 @@ import (
 	"github.com/fatih/color"
 )
 
-// NewLogo 打印项目服务启动信息。
+// printLogo 打印项目服务启动信息。
 // 显示项目 Logo、Go 版本、系统信息、服务配置等信息。
 //
 // 参数:
-//   - config: 应用配置
-func NewLogo(config *config.Config) {
+//   - conf: 应用配置
+func printLogo(conf *config.Config) {
 	// see https://patorjk.com/software/taag/#p=testall&f=Graffiti&t=ult
 	var logo = `
 	██╗   ██╗	██╗  	     ████████╗
@@ -39,10 +38,10 @@ GO 版本及路径: %s (%s)
 		runtime.GOARCH,
 		runtime.GOMAXPROCS(0),
 
-		config.App.Name,
-		config.App.ID,
-		config.App.Version,
-		config.Environment,
+		conf.App.Name,
+		conf.App.ID,
+		conf.App.Version,
+		conf.Environment,
 	)
 
 	color.HiGreen(contents)

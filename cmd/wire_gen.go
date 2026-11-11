@@ -10,33 +10,35 @@ import (
 	"context"
 	"ult/config"
 	"ult/internal/api"
-	"ult/internal/app"
 	"ult/internal/data"
 	"ult/internal/data/repo"
+	"ult/internal/infra/shared"
 	"ult/internal/router"
 	"ult/internal/server"
 	"ult/internal/service"
-	app2 "ult/pkg/app"
+	"ult/pkg/app"
+	"ult/pkg/logger"
 )
 
 // Injectors from wire.go:
 
-func initApp(ctx context.Context, conf *config.Config, tools *app.Tools) (*app2.App, func(), error) {
-	dataData, cleanup, err := data.NewData(ctx, conf, tools)
+func initApp(ctx context.Context, conf *config.Config, appLogger *logger.Logger) (*app.App, func(), error) {
+	dataData, cleanup, err := data.NewData(ctx, conf, appLogger)
 	if err != nil {
 		return nil, nil, err
 	}
 	dataRepo := data.NewDataRepo(dataData)
 	testRepo := repo.NewTestRepo(dataData)
-	heartbeatService := service.NewHeartbeatService(dataRepo, testRepo, tools)
-	heartbeatInterface := api.NewHeartbeatHandler(heartbeatService, tools)
+	heartbeatService := service.NewHeartbeatService(dataRepo, testRepo)
+	heartbeatInterface := api.NewHeartbeatHandler(heartbeatService)
 	httpRouter := router.NewHTTPRouter(heartbeatInterface)
-	httpServer, err := server.NewHTTPServer(conf, tools, httpRouter)
+	systemEnvironment := shared.NewEnvironment(conf)
+	httpServer, err := server.NewHTTPServer(conf, appLogger, systemEnvironment, httpRouter)
 	if err != nil {
 		cleanup()
 		return nil, nil, err
 	}
-	appApp := newApp(ctx, conf, tools, httpServer)
+	appApp := newApp(ctx, conf, appLogger, httpServer)
 	return appApp, func() {
 		cleanup()
 	}, nil

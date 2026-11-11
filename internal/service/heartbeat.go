@@ -7,7 +7,6 @@ import (
 	"maps"
 	"slices"
 	"time"
-	"ult/internal/app"
 	"ult/internal/data"
 	"ult/internal/data/repo"
 )
@@ -31,7 +30,6 @@ type HeartbeatComponent struct {
 type HeartbeatService struct {
 	dataRepo     *data.DataRepo // 数据仓库
 	testRepo     repo.TestRepo  // 测试数据仓库
-	tools        *app.Tools     // 应用工具包
 	probeTimeout time.Duration
 }
 
@@ -40,15 +38,13 @@ type HeartbeatService struct {
 // 参数:
 //   - dataRepo: 数据仓库
 //   - testRepo: 测试数据仓库
-//   - tools: 应用工具包
 //
 // 返回:
 //   - *HeartbeatService: 健康检查服务实例
-func NewHeartbeatService(dataRepo *data.DataRepo, testRepo repo.TestRepo, tools *app.Tools) *HeartbeatService {
+func NewHeartbeatService(dataRepo *data.DataRepo, testRepo repo.TestRepo) *HeartbeatService {
 	return &HeartbeatService{
 		dataRepo:     dataRepo,
 		testRepo:     testRepo,
-		tools:        tools,
 		probeTimeout: 2 * time.Second,
 	}
 }

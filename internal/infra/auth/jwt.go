@@ -1,4 +1,5 @@
-package app
+// Package auth 提供认证相关的基础设施构造。
+package auth
 
 import (
 	"bytes"
@@ -11,42 +12,42 @@ import (
 	"ult/config"
 	"ult/config/autoload"
 
-	"github.com/devpety/go-utils/v3/auth"
+	utilsauth "github.com/devpety/go-utils/v3/auth"
 )
 
 // NewJWT 按配置选择唯一算法，非对称密钥文件的相对路径以配置目录为基准。
-func NewJWT(conf *config.Config) (auth.JWT, error) {
+func NewJWT(conf *config.Config) (utilsauth.JWT, error) {
 	if conf == nil {
 		return nil, fmt.Errorf("JWT 配置不能为空")
 	}
-	algorithm := auth.JWTAlgorithm(conf.JWT.Algorithm)
+	algorithm := utilsauth.JWTAlgorithm(conf.JWT.Algorithm)
 	if algorithm == "" {
-		algorithm = auth.HS256
+		algorithm = utilsauth.HS256
 	}
 	key, err := jwtKey(conf.JWT, algorithm, conf.ProjectPath)
 	if err != nil {
 		return nil, err
 	}
-	return auth.NewJWT(conf.JWT.App, conf.JWT.Issuer, key,
-		auth.WithJWTAlgorithm(algorithm), auth.WithJWTAudience(conf.JWT.Audience...))
+	return utilsauth.NewJWT(conf.JWT.App, conf.JWT.Issuer, key,
+		utilsauth.WithJWTAlgorithm(algorithm), utilsauth.WithJWTAudience(conf.JWT.Audience...))
 }
 
 // jwtKey 根据配置选择密钥。
 // 支持对称和非对称算法，根据算法选择不同的密钥来源。
-func jwtKey(conf autoload.JWT, algorithm auth.JWTAlgorithm, basePath string) (any, error) {
+func jwtKey(conf autoload.JWT, algorithm utilsauth.JWTAlgorithm, basePath string) (any, error) {
 	switch algorithm {
-	case auth.HS256, auth.HS384, auth.HS512:
+	case utilsauth.HS256, utilsauth.HS384, utilsauth.HS512:
 		if conf.PrivateKeyFile != "" || conf.PublicKeyFile != "" {
 			return nil, fmt.Errorf("JWT %s 只能配置 secret，不能配置非对称密钥文件", algorithm)
 		}
 		return conf.Secret, nil
-	case auth.RS256, auth.RS384, auth.RS512, auth.PS256, auth.PS384, auth.PS512,
-		auth.ES256, auth.ES384, auth.ES512, auth.EdDSA:
+	case utilsauth.RS256, utilsauth.RS384, utilsauth.RS512, utilsauth.PS256, utilsauth.PS384, utilsauth.PS512,
+		utilsauth.ES256, utilsauth.ES384, utilsauth.ES512, utilsauth.EdDSA:
 		if conf.Secret != "" || (conf.PrivateKeyFile == "") == (conf.PublicKeyFile == "") {
 			return nil, fmt.Errorf("JWT %s 必须且只能配置 private_key_file 或 public_key_file，不能配置 secret", algorithm)
 		}
 	default:
-		return nil, fmt.Errorf("%w: %q", auth.ErrJWTAlgorithm, algorithm)
+		return nil, fmt.Errorf("%w: %q", utilsauth.ErrJWTAlgorithm, algorithm)
 	}
 
 	private := conf.PrivateKeyFile != ""

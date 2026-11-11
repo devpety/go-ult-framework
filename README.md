@@ -153,7 +153,7 @@ go run ./cmd -config ./configs/local.yml
 
 业务按 `router → api → service → repo → Data` 组织，依赖通过构造函数传入。服务和仓库使用标准 `context.Context`，HTTP Context 留在处理层。
 
-装配定义见 [cmd/wire.go](cmd/wire.go)，生成链见 [cmd/wire_gen.go](cmd/wire_gen.go)。注入入口接收 `ctx`、`conf`、`tools`，返回应用、清理函数和错误。数据初始化失败会返回错误；后续 HTTP 构建失败时，Wire 生成代码会调用已经获得的清理函数。
+装配定义见 [cmd/wire.go](cmd/wire.go)，生成链见 [cmd/wire_gen.go](cmd/wire_gen.go)。注入入口接收 `ctx`、`conf`、`appLogger`，返回应用、清理函数和错误。数据初始化失败会返回错误；后续 HTTP 构建失败时，Wire 生成代码会调用已经获得的清理函数。
 
 | 目录 | 职责与入口 |
 | --- | --- |
@@ -168,7 +168,8 @@ go run ./cmd -config ./configs/local.yml
 | [internal/data/model/](internal/data/model/) | 数据模型，`BaseModel` 包含 ID、创建时间、更新时间和软删除字段 |
 | [internal/data/dbquery/](internal/data/dbquery/) | GORM/gen 查询器生成结果 |
 | [internal/data/redis/action/](internal/data/redis/action/) | Redis 租约锁 |
-| [internal/app/](internal/app/) | `Tools`：日志、日期时间、环境和 JWT 工具 |
+| [internal/infra/auth/](internal/infra/auth/) | 按配置构造 `auth.JWT`，解析对称密钥与非对称 PEM 文件 |
+| [internal/infra/shared/](internal/infra/shared/) | 通用依赖构造：`Environment`、`Datetime`；`ProviderSet` 已接入装配图 |
 | [pkg/http/](pkg/http/) | HTTP 构建、路由、Context、统一响应及中间件 |
 | [pkg/app/](pkg/app/) | 应用上下文和服务生命周期 |
 | [pkg/startup/](pkg/startup/) | 数据依赖初始化总预算、单次期限与重试控制 |
@@ -456,7 +457,7 @@ HTTP Context 仅在当前请求内使用，收尾时清除引用并归还对象�
 | `RawData()` | 缓存正文的字节副本，修改副本不影响原始数据 |
 | `Request()`、`GinContext()`、`ResponseWriter()` | 底层对象，遵守各自的生命周期和并发约束 |
 
-日志按 `app`、`sql`、`request` 分类；应用通过 `tools.Logger().UseApp(ctx)` 记录，SQL 和请求日志使用同一 TraceID 提取入口。`types.TraceIDFromContext` 只读取结构化请求上下文，不读取同名字符串键，不生成新 ID；没有有效 ID 时日志字段为 `null`。
+日志按 `app`、`sql`、`request` 分类；应用通过注入的 `*logger.Logger` 调用 `UseApp(ctx)` 记录，SQL 和请求日志使用同一 TraceID 提取入口。`types.TraceIDFromContext` 只读取结构化请求上下文，不读取同名字符串键，不生成新 ID；没有有效 ID 时日志字段为 `null`。
 
 非 HTTP 入口可以通过 `types.NewRequestContext` 或 `pkg/app.NewAppContextWithTraceId` 创建带 TraceID 的上下文。
 
@@ -550,7 +551,7 @@ func CreateTwo(ctx context.Context, source data.Data, first, second *model.Test)
 
 ### JWT 工具
 
-应用通过 `internal/app.NewJWT(conf)` 构造 `auth.JWT`，并由 `Tools.JWT()` 提供。配置字段为 `app`、`issuer`、`algorithm`、`secret`、`private_key_file`、`public_key_file`、`audience`。
+应用通过 `internal/infra/auth.NewJWT(conf)` 构造 `auth.JWT`。入口只用它做启动期配置校验，业务模块把 `NewJWT` 加入自己的 `ProviderSet` 即可按需注入。配置字段为 `app`、`issuer`、`algorithm`、`secret`、`private_key_file`、`public_key_file`、`audience`。
 
 | 算法 | 配置要求 |
 | --- | --- |
@@ -568,15 +569,16 @@ package example
 
 import (
 	"time"
-	"ult/internal/app"
+
+	"github.com/devpety/go-utils/v3/auth"
 )
 
-func IssueToken(tools *app.Tools, id string) (string, error) {
-	return tools.JWT().GenerateToken(id, time.Hour)
+func IssueToken(jwt auth.JWT, id string) (string, error) {
+	return jwt.GenerateToken(id, time.Hour)
 }
 
-func ParseTokenID(tools *app.Tools, token string) (string, error) {
-	claims, err := tools.JWT().ParseToken(token)
+func ParseTokenID(jwt auth.JWT, token string) (string, error) {
+	claims, err := jwt.ParseToken(token)
 	if err != nil {
 		return "", err
 	}
@@ -594,7 +596,7 @@ func ParseTokenID(tools *app.Tools, token string) (string, error) {
 
 1. 在 `internal/data/model/` 定义模型，加入 GORM 生成器模型列表，执行 `make gormgen` 更新查询器。
 2. 在 `internal/data/repo/` 定义仓库接口及实现，通过构造函数注入 `data.Data`，按请求传递标准上下文。
-3. 在 `internal/service/` 实现业务逻辑，通过构造函数注入所需仓库和工具。
+3. 在 `internal/service/` 实现业务逻辑，通过构造函数注入所需仓库与日志等通用依赖。
 4. 在 `internal/api/` 绑定、校验请求，调用服务，设置响应并及时返回。
 5. 将构造函数加入对应 `ProviderSet`；在 `internal/router/` 注册路径，需要时扩展路由构造函数的依赖。
 6. 执行 `make wire`，检查生成的装配和清理链，再编译项目。
