@@ -18,12 +18,8 @@ import (
 	"ult/pkg/repositories"
 
 	"github.com/devpety/go-utils/v3/cache/redis"
-	"github.com/google/wire"
 	"gorm.io/gorm"
 )
-
-// ProviderSet Wire 依赖注入提供者集合。
-var ProviderSet = wire.NewSet(NewData, NewDataRepo)
 
 var _ Data = (*dataImpl)(nil)
 

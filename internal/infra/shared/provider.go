@@ -5,12 +5,7 @@ import (
 	"ult/config"
 
 	"github.com/devpety/go-utils/v3/server/system"
-	"github.com/google/wire"
 )
-
-// ProviderSet 装配图可用的通用依赖。
-// 未接入装配目标的构造函数不放进集合，否则 Wire 会报 unused provider。
-var ProviderSet = wire.NewSet(NewEnvironment)
 
 // NewEnvironment 按配置构造运行环境，非标准取值回落为 dev。
 func NewEnvironment(conf *config.Config) system.Environment {
